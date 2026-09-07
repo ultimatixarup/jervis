@@ -14,7 +14,15 @@ scripts/grant-permissions.sh  # macOS privacy panes, one at a time
 scripts/doctor.sh             # must be all PASS
 ```
 
-Put your Anthropic API key in `~/.jervis/.env`, then talk to it:
+Give it Anthropic credentials, either way round:
+
+```bash
+ant auth login                        # browser OAuth; nothing to paste, no key on disk
+# or put ANTHROPIC_API_KEY in ~/.jervis/.env
+```
+
+`scripts/doctor.sh` reports which source it found. Note: an `ant` profile and Claude
+Code's own login can conflict - keep one. Then talk to it:
 
 ```bash
 scripts/start.sh              # brain + microphone; say "Hey Jarvis, ..."

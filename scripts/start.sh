@@ -8,8 +8,9 @@ mkdir -p "$JERVIS_HOME/logs"
 BRAIN_LOG="$JERVIS_HOME/logs/brain.log"
 PIDFILE="$JERVIS_HOME/jervis.pid"
 
-if [ ! -f "$JERVIS_HOME/.env" ] || ! grep -qE '^ANTHROPIC_API_KEY=.+' "$JERVIS_HOME/.env"; then
-  die "ANTHROPIC_API_KEY is empty in $JERVIS_HOME/.env. Add it, then run scripts/doctor.sh."
+if ! uv run python -c 'import sys; from jervis_brain.credentials import detect; sys.exit(0 if detect().ok else 1)'; then
+  die "No Anthropic credentials. Put ANTHROPIC_API_KEY in $JERVIS_HOME/.env, or run
+\`ant auth login\`. Then check with scripts/doctor.sh."
 fi
 
 if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then

@@ -7,7 +7,6 @@ added later without touching the agent (PLAN.md §1).
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -19,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from .agent import Agent
 from .config import Config, load_config
+from .credentials import detect
 from .mcp_client import MCPClientPool
 from .memory import MemoryStore
 from .permissions import AuditLog, Guard
@@ -83,13 +83,17 @@ async def build_runtime(config: Config | None = None) -> Runtime:
         confirm_window_seconds=config.permissions.confirm_window_seconds,
         extra_destructive_patterns=config.permissions.extra_destructive_patterns,
     )
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        # Not fatal - /health and the tool list still work, and it makes the failure
+    credential = detect()
+    if not credential.ok:
+        # Not fatal - /health and the tool list still work - but it makes the failure
         # legible now rather than on the first thing Arup says out loud.
         log.error(
-            "ANTHROPIC_API_KEY is not set; every request will fail. Put it in "
-            "~/.jervis/.env and see scripts/doctor.sh."
+            "No Anthropic credentials (%s); every request will fail. Put "
+            "ANTHROPIC_API_KEY in ~/.jervis/.env or run `ant auth login`.",
+            credential.detail,
         )
+    else:
+        log.info("using credentials from the %s (%s)", credential.source, credential.detail)
     client = anthropic.AsyncAnthropic()
     return Runtime(config, pool, memory, Agent(client, pool, guard, memory, config))
 

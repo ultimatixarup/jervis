@@ -4,23 +4,26 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import sys
 from typing import Any
 
 import click
 
 from .config import load_config
+from .credentials import detect
 from .permissions import AuditLog
 from .server import Runtime, build_runtime
 
 
 async def _with_runtime(fn: Any, *, needs_api_key: bool = False) -> Any:
-    if needs_api_key and not os.environ.get("ANTHROPIC_API_KEY"):
-        raise click.ClickException(
-            "ANTHROPIC_API_KEY is not set. Put it in ~/.jervis/.env, then run "
-            "scripts/doctor.sh to check."
-        )
+    if needs_api_key:
+        credential = detect()
+        if not credential.ok:
+            raise click.ClickException(
+                f"No Anthropic credentials ({credential.detail}). Either put "
+                "ANTHROPIC_API_KEY in ~/.jervis/.env, or run `ant auth login`. "
+                "scripts/doctor.sh will confirm."
+            )
     runtime = await build_runtime()
     try:
         if runtime.pool.failures:

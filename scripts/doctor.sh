@@ -58,15 +58,16 @@ else
   record "config.yaml" FAIL "missing - run scripts/setup.sh"
 fi
 
-if [ -f "$JERVIS_HOME/.env" ]; then
-  key="$(grep -E '^ANTHROPIC_API_KEY=.+' "$JERVIS_HOME/.env" | head -1)"
-  if [ -n "$key" ]; then
-    record "ANTHROPIC_API_KEY" PASS "set in ~/.jervis/.env"
-  else
-    record "ANTHROPIC_API_KEY" FAIL "empty in $JERVIS_HOME/.env"
-  fi
+# Any of the SDK's credential sources will do; checking only for a key would make a
+# working `ant auth login` profile look broken.
+if cred="$(cd "$REPO_ROOT" && uv run python -c '
+from jervis_brain.credentials import detect
+c = detect()
+print(("PASS" if c.ok else "FAIL"), c.source + ": " + c.detail)
+' 2>/dev/null)"; then
+  record "anthropic credentials" "${cred%% *}" "${cred#* }"
 else
-  record "ANTHROPIC_API_KEY" FAIL "$JERVIS_HOME/.env missing - run scripts/setup.sh"
+  record "anthropic credentials" FAIL "could not check (is the workspace synced?)"
 fi
 
 # --- microphone ---------------------------------------------------------------
