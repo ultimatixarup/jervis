@@ -55,6 +55,14 @@ Silence must never count as consent. If it ever does, stop and treat it as a bug
 Ask something with a long answer, then say **"Hey Jarvis"** while it is still talking.
 It should stop mid-sentence and listen.
 
+## 5. Failures are spoken, not swallowed
+
+Stop the brain (`scripts/stop.sh`) and say something. Jervis should say it cannot
+reach its brain, out loud. Then start the brain with no `ANTHROPIC_API_KEY` and try
+again: it should say the key is not set. A voice agent that answers a failure with
+silence is worse than one that answers wrongly - you cannot tell it apart from not
+having heard you.
+
 ## Known limits
 
 - **The wake word is "Hey Jarvis", not "Jervis".** That is openwakeword's built-in

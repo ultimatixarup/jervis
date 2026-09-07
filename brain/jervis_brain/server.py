@@ -7,6 +7,7 @@ added later without touching the agent (PLAN.md §1).
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -42,6 +43,28 @@ class TurnResponse(BaseModel):
     tool_calls: list[str] = Field(default_factory=list)
 
 
+AUTH_HINTS = ("could not resolve authentication", "authentication_error", "x-api-key")
+
+
+def spoken_error(exc: Exception) -> str:
+    """Turn an exception into something worth hearing out loud.
+
+    The voice loop speaks whatever comes back, so a 500 with a traceback becomes
+    silence or noise. Every failure has to arrive as a sentence.
+    """
+    message = str(exc).lower()
+    if isinstance(exc, anthropic.AuthenticationError) or any(h in message for h in AUTH_HINTS):
+        return (
+            "I can't sign in to Claude. Check that ANTHROPIC_API_KEY is set in the "
+            "env file in your jervis folder."
+        )
+    if isinstance(exc, anthropic.RateLimitError | anthropic.OverloadedError):
+        return "Claude is busy right now. Try me again in a moment."
+    if isinstance(exc, anthropic.APIConnectionError):
+        return "I can't reach Claude. It looks like the network is down."
+    return "Something went wrong at my end. The details are in the log."
+
+
 @dataclass
 class Runtime:
     config: Config
@@ -60,6 +83,13 @@ async def build_runtime(config: Config | None = None) -> Runtime:
         confirm_window_seconds=config.permissions.confirm_window_seconds,
         extra_destructive_patterns=config.permissions.extra_destructive_patterns,
     )
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        # Not fatal - /health and the tool list still work, and it makes the failure
+        # legible now rather than on the first thing Arup says out loud.
+        log.error(
+            "ANTHROPIC_API_KEY is not set; every request will fail. Put it in "
+            "~/.jervis/.env and see scripts/doctor.sh."
+        )
     client = anthropic.AsyncAnthropic()
     return Runtime(config, pool, memory, Agent(client, pool, guard, memory, config))
 
@@ -103,10 +133,13 @@ def create_app(
             "server_failures": state.pool.failures,
         }
 
-    @app.post("/ask")
-    async def ask(request: AskRequest) -> TurnResponse:
-        state: Runtime = app.state.runtime
-        turn = await state.agent.ask(request.text, session_id=request.session_id)
+    async def _turn(handler: Callable[[], Awaitable[Any]], session_id: str) -> TurnResponse:
+        """Run one exchange, converting any failure into something speakable."""
+        try:
+            turn = await handler()
+        except Exception as exc:
+            log.exception("turn failed")
+            return TurnResponse(reply=spoken_error(exc), session_id=session_id)
         return TurnResponse(
             reply=turn.reply,
             session_id=turn.session_id,
@@ -114,15 +147,20 @@ def create_app(
             tool_calls=turn.tool_calls,
         )
 
+    @app.post("/ask")
+    async def ask(request: AskRequest) -> TurnResponse:
+        state: Runtime = app.state.runtime
+        return await _turn(
+            lambda: state.agent.ask(request.text, session_id=request.session_id),
+            request.session_id,
+        )
+
     @app.post("/confirm")
     async def confirm(request: ConfirmRequest) -> TurnResponse:
         state: Runtime = app.state.runtime
-        turn = await state.agent.confirm(request.text, session_id=request.session_id)
-        return TurnResponse(
-            reply=turn.reply,
-            session_id=turn.session_id,
-            pending_confirmation=turn.pending_confirmation,
-            tool_calls=turn.tool_calls,
+        return await _turn(
+            lambda: state.agent.confirm(request.text, session_id=request.session_id),
+            request.session_id,
         )
 
     return app
