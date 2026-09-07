@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -86,3 +87,48 @@ def test_no_secret_value_is_ever_returned(tmp_path: Path) -> None:
     result = detect(tmp_path / ".env")
     assert "super-secret" not in result.detail
     assert "super-secret" not in result.source
+
+
+def test_empty_credentials_are_dropped_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The shipped .env has every key blank; loading it must not shadow a profile."""
+    from jervis_brain.config import drop_empty_credentials
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "   ")
+    monkeypatch.setenv("PLAID_ENV", "sandbox")
+
+    drop_empty_credentials()
+
+    assert "ANTHROPIC_API_KEY" not in os.environ
+    assert "ELEVENLABS_API_KEY" not in os.environ
+    assert os.environ["PLAID_ENV"] == "sandbox", "non-credential values are untouched"
+
+
+def test_a_real_key_survives(monkeypatch: pytest.MonkeyPatch) -> None:
+    from jervis_brain.config import drop_empty_credentials
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-real")
+    drop_empty_credentials()
+    assert os.environ["ANTHROPIC_API_KEY"] == "sk-ant-real"
+
+
+def test_loading_the_shipped_env_leaves_an_oauth_profile_usable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """End to end: blank .env plus a profile must resolve to the profile."""
+    from jervis_brain.config import load_config
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    profiles = tmp_path / "credentials"
+    profiles.mkdir()
+    (profiles / "default.json").write_text("{}")
+    monkeypatch.setattr(credentials, "CREDENTIALS_DIR", profiles)
+
+    env_file = tmp_path / ".env"
+    env_file.write_text("ANTHROPIC_API_KEY=\n")
+    monkeypatch.setattr("jervis_brain.config.DEFAULT_HOME", tmp_path)
+
+    load_config(tmp_path / "absent.yaml", load_env=True)
+    assert detect(env_file).source == "oauth profile"

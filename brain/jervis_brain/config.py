@@ -17,6 +17,22 @@ def _expand(value: str) -> Path:
     return Path(os.path.expandvars(os.path.expanduser(value)))
 
 
+CREDENTIAL_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ELEVENLABS_API_KEY")
+
+
+def drop_empty_credentials() -> None:
+    """Remove credential variables that were loaded as empty strings.
+
+    An empty ANTHROPIC_API_KEY is worse than an absent one: it still occupies its slot
+    in the SDK's precedence order and shadows an `ant auth login` profile. The example
+    .env ships every key blank, so loading it verbatim would break exactly the setup
+    that needs no key at all.
+    """
+    for name in CREDENTIAL_VARS:
+        if name in os.environ and not os.environ[name].strip():
+            del os.environ[name]
+
+
 @dataclass(frozen=True)
 class VoiceConfig:
     """The voice section, as the brain sees it.
@@ -101,6 +117,7 @@ def load_config(path: str | Path | None = None, *, load_env: bool = True) -> Con
     if load_env:
         # Secrets live beside the config, never in the repo (PLAN.md §6).
         load_dotenv(DEFAULT_HOME / ".env", override=False)
+        drop_empty_credentials()
 
     paths_raw = raw.get("paths") or {}
     home = _expand(paths_raw.get("home", str(DEFAULT_HOME)))

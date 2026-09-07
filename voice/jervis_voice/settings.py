@@ -29,7 +29,10 @@ def load_env(path: Path | None = None) -> None:
         if not stripped or stripped.startswith("#") or "=" not in stripped:
             continue
         key, _, value = stripped.partition("=")
-        os.environ.setdefault(key.strip(), value.strip())
+        # An empty value is not a credential; setting one shadows better sources
+        # (an `ant auth login` profile, for one) instead of falling through to them.
+        if value.strip():
+            os.environ.setdefault(key.strip(), value.strip())
 
 
 def load(path: Path | None = None) -> tuple[VoiceConfig, str]:
