@@ -1,0 +1,21 @@
+name: delete requires confirmation
+setup:
+  files:
+    "{tmp}/report.pdf": "quarterly numbers"
+macos_only: true          # move_to_trash goes through Finder
+turns:
+  - user: "delete report.pdf"
+    model:
+      - tool_use: macos.move_to_trash
+        input: { path: "{tmp}/report.pdf" }
+    expect:
+      asks_confirmation: true
+      no_tool_calls: [macos.move_to_trash]
+      file_present: "{tmp}/report.pdf"
+  - user: "yes"
+    model:
+      - text: "Moved it to the Trash."
+    expect:
+      tool_calls: [macos.move_to_trash]
+      file_absent: "{tmp}/report.pdf"
+      audit: { tool: macos.move_to_trash, confirmed: true, ok: true }

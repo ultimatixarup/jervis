@@ -3,7 +3,7 @@
 An always-on, voice-driven personal agent for macOS. Claude is the brain; MCP servers are
 the hands. See `PLAN.md` for the full design and phase plan.
 
-Status: **Phase 0 (scaffold)**. Nothing talks yet.
+Status: **Phase 2**. Jervis works from the keyboard; the voice loop is Phase 3.
 
 ## Quickstart
 
@@ -14,11 +14,17 @@ scripts/grant-permissions.sh  # macOS privacy panes, one at a time
 scripts/doctor.sh             # must be all PASS
 ```
 
-Put your Anthropic API key in `~/.jervis/.env`, then (from Phase 2 on):
+Put your Anthropic API key in `~/.jervis/.env`, then talk to it by typing:
 
 ```bash
-scripts/start.sh              # foreground; say "Jervis, ..."
+uv run jervis repl            # conversation; Ctrl-D to leave
+uv run jervis ask "what's on my desktop"
+uv run jervis status          # what it can reach, and what it last did
+uv run jervis audit           # every tool call, most recent last
+uv run jervis serve           # the HTTP endpoint on localhost:7777
 ```
+
+Voice (`scripts/start.sh`) arrives in Phase 3.
 
 When you're happy with it, `daemon/install.sh` (Phase 7) runs it at login forever.
 
@@ -34,7 +40,13 @@ When you're happy with it, `daemon/install.sh` (Phase 7) runs it at login foreve
 Moving money, formatting disks, changing security settings, and touching `~/.ssh` or the
 Keychain are `blocked` by construction, not by prompt.
 
-Every tool call is appended to `~/.jervis/audit.jsonl`.
+Every tool call is appended to `~/.jervis/audit.jsonl` — read it with `jervis audit`.
+
+## Typed endpoint
+
+`jervis serve` exposes `POST /ask`, `POST /confirm` and `GET /health` on
+`localhost:7777`. The voice loop is just a client of these, so the brain can be
+driven — and tested — without a microphone.
 
 ## Layout
 

@@ -14,11 +14,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
 
 from jervis_mcp_macos.server import mcp
 from jervis_mcp_macos.tiers import ESCALATION_KEY, TIER_KEY, Escalation, Tier
-from mcp import ClientSession, StdioServerParameters, types
 
 EXPECTED_TIERS: dict[str, Tier] = {
     "run_shell": Tier.WRITE,
@@ -234,7 +234,7 @@ async def test_screenshot_returns_a_png() -> None:
         pytest.skip("Screen Recording is not granted - run scripts/grant-permissions.sh")
     assert not result.is_error, _text(result)
     images = [b for b in result.content if isinstance(b, types.ImageContent)]
-    assert images and images[0].mimeType == "image/png"
+    assert images and images[0].mime_type == "image/png"
 
 
 @pytest.mark.asyncio

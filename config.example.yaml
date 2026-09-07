@@ -13,12 +13,15 @@ voice:
   tts_backend: say              # say | kokoro | elevenlabs
   tts_voice: Daniel
 
+# Enable a server once its phase has landed. An enabled server that does not exist
+# yet is not fatal - the brain reports it and carries on - but it logs an error on
+# every start, which trains you to ignore errors.
 servers:
-  macos:    { enabled: true }
-  imessage: { enabled: true }
-  mail:     { enabled: true }
-  bank:     { enabled: false, env: sandbox }
-  ubereats: { enabled: false }
+  macos:    { enabled: true }                 # Phase 1
+  imessage: { enabled: false }                # Phase 4
+  mail:     { enabled: false }                # Phase 4
+  bank:     { enabled: false, env: sandbox }  # Phase 5
+  ubereats: { enabled: false }                # Phase 6
 
 permissions:
   confirm_window_seconds: 60

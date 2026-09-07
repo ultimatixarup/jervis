@@ -1,0 +1,15 @@
+name: reading runs silently
+setup:
+  files:
+    "{tmp}/notes.txt": "buy oat milk"
+turns:
+  - user: "what's in that folder?"
+    model:
+      - tool_use: macos.list_dir
+        input: { path: "{tmp}" }
+      - text: "One file: notes.txt."
+    expect:
+      tool_calls: [macos.list_dir]
+      asks_confirmation: false
+      audit: { tool: macos.list_dir, tier: read, ok: true }
+      reply_contains: "notes.txt"

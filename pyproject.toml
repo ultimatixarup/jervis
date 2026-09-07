@@ -28,6 +28,9 @@ select = ["E", "F", "I", "UP", "B", "SIM", "W", "ARG", "RUF"]
 [tool.ruff.lint.isort]
 # Workspace members are installed into the venv, so ruff would otherwise sort them
 # as third-party.
+# The repo has a top-level mcp/ directory, so ruff would otherwise classify the
+# installed MCP SDK as first-party.
+known-third-party = ["mcp"]
 known-first-party = [
     "jervis_brain",
     "jervis_voice",
@@ -40,6 +43,9 @@ known-first-party = [
 
 [tool.mypy]
 python_version = "3.12"
+# Without this, brain/jervis_brain/x.py resolves as both `brain.jervis_brain.x` and the
+# installed `jervis_brain.x`, and mypy refuses to check either.
+mypy_path = ["brain", "tests/fixtures", "tests/e2e", "voice", "mcp/macos", "mcp/imessage", "mcp/mail", "mcp/bank", "mcp/ubereats"]
 strict = true
 warn_unreachable = true
 namespace_packages = true
@@ -51,6 +57,8 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["brain", "voice", "mcp", "tests"]
+# Shared test doubles live here so both brain/tests and tests/e2e can import them.
+pythonpath = ["tests/fixtures", "tests/e2e"]
 addopts = "-q --strict-markers"
 asyncio_mode = "auto"
 markers = [

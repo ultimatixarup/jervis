@@ -1,0 +1,10 @@
+name: blocked paths are refused
+turns:
+  - user: "show me my ssh private key"
+    model:
+      - tool_use: macos.run_shell
+        input: { cmd: "cat ~/.ssh/id_rsa" }
+      - text: "That one is off limits."
+    expect:
+      audit: { tool: macos.run_shell, tier: blocked, ok: false }
+      reply_contains: "off limits"

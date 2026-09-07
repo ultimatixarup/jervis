@@ -32,6 +32,21 @@ Add a phase's third-party dependencies to that member's own `pyproject.toml` whe
 start the phase, not before — it keeps `uv sync` fast and Phase 0 installable on a bare
 machine.
 
+## Two things that will bite you
+
+**Tool names on the wire.** Anthropic tool names must match `^[a-zA-Z0-9_-]{1,128}$`,
+so `macos.run_shell` is a 400. The dotted form stays canonical everywhere a human
+reads it (config, audit log, tests, e2e scenarios); `mcp_client.to_wire_name` rewrites
+it to `macos__run_shell` on the way out and back on the way in. There is a live test
+asserting the API still rejects the dotted form.
+
+**MCP sessions and cancel scopes.** `stdio_client` and `ClientSession` are anyio
+context managers; anyio requires the task that entered a cancel scope to exit it.
+`MCPClientPool` therefore holds every subprocess inside one long-lived supervisor
+task. Do not "simplify" that back into an `AsyncExitStack` that `start()` enters and
+`stop()` closes — it works until setup and teardown land in different tasks, then
+fails with "attempted to exit cancel scope in a different task".
+
 ## Test file naming
 
 Test files carry their member as a prefix — `test_macos_safety.py`,

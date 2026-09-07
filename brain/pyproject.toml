@@ -12,7 +12,11 @@ dependencies = [
     "uvicorn>=0.32",
     "httpx>=0.27",
     "click>=8.1",
+    "python-dotenv>=1.0",
 ]
+
+[project.scripts]
+jervis = "jervis_brain.cli:main"
 
 [build-system]
 requires = ["hatchling"]
