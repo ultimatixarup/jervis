@@ -184,15 +184,23 @@ def test_a_failed_server_is_warned_about(monkeypatch: pytest.MonkeyPatch, config
 
 
 @pytest.mark.parametrize("command", ["ask", "repl"])
-def test_a_missing_api_key_is_explained_not_a_traceback(
-    monkeypatch: pytest.MonkeyPatch, config: Config, command: str
+def test_missing_credentials_are_explained_not_a_traceback(
+    monkeypatch: pytest.MonkeyPatch, config: Config, command: str, tmp_path: Path
 ) -> None:
+    from jervis_brain import credentials
+
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    monkeypatch.setattr(credentials, "ENV_FILE", tmp_path / "absent.env")
+    monkeypatch.setattr(credentials, "CREDENTIALS_DIR", tmp_path / "no-profiles")
     install(monkeypatch, make_runtime([], config))
+
     args = [command] if command == "repl" else [command, "hi"]
     result = CliRunner().invoke(cli_module.cli, args)
     assert result.exit_code != 0
-    assert "ANTHROPIC_API_KEY is not set" in result.output
+    # Both routes to credentials are offered, not just the one.
+    assert "ANTHROPIC_API_KEY" in result.output
+    assert "ant auth login" in result.output
     assert "doctor.sh" in result.output
 
 
