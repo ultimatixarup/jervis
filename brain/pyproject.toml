@@ -1,0 +1,22 @@
+[project]
+name = "jervis-brain"
+version = "0.1.0"
+description = "Jervis brain: Claude tool-use loop, permissions, memory"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "anthropic>=0.69",
+    "mcp>=1.2",
+    "pydantic>=2.9",
+    "pyyaml>=6.0",
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
+    "httpx>=0.27",
+    "click>=8.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["jervis_brain"]

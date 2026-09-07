@@ -1,0 +1,51 @@
+[tool.uv.workspace]
+members = ["brain", "voice", "mcp/macos", "mcp/imessage", "mcp/mail", "mcp/bank", "mcp/ubereats"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-mock>=3.14",
+    "pytest-cov>=6.0",
+    "hypothesis>=6.112",
+    "respx>=0.21",
+    "responses>=0.25",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "types-PyYAML>=6.0",
+]
+
+[tool.uv]
+required-version = ">=0.5"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "W", "ARG", "RUF"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+namespace_packages = true
+explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+module = ["mcp.*", "openwakeword.*", "sounddevice.*", "mlx_whisper.*", "plaid.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["brain", "voice", "mcp", "tests"]
+addopts = "-q --strict-markers"
+asyncio_mode = "auto"
+markers = [
+    "live: hits the real Anthropic API; skipped unless --live",
+    "macos: needs live macOS services (Finder, Keychain, osascript)",
+    "slow: takes more than a few seconds",
+]
+
+[tool.coverage.run]
+branch = true
+omit = ["*/tests/*"]

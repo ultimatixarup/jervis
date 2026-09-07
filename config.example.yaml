@@ -1,0 +1,35 @@
+# Copied to ~/.jervis/config.yaml by scripts/setup.sh (never overwritten if it exists).
+
+# Sonnet-class model, per PLAN.md §2. Verify against
+# https://docs.claude.com/en/docs/about-claude/models before changing.
+model: claude-sonnet-5
+max_tool_rounds: 12
+persona_name: Jervis
+
+voice:
+  wake_model: hey_jarvis        # built-in openwakeword model; switch to `jervis` once trained
+  wake_threshold: 0.6
+  stt_model: mlx-community/whisper-small.en-mlx
+  tts_backend: say              # say | kokoro | elevenlabs
+  tts_voice: Daniel
+
+servers:
+  macos:    { enabled: true }
+  imessage: { enabled: true }
+  mail:     { enabled: true }
+  bank:     { enabled: false, env: sandbox }
+  ubereats: { enabled: false }
+
+permissions:
+  confirm_window_seconds: 60
+  extra_destructive_patterns: []
+
+paths:
+  home: ~/.jervis
+  audit_log: ~/.jervis/audit.jsonl
+  memory_db: ~/.jervis/memory.db
+  logs: ~/.jervis/logs
+
+http:
+  host: 127.0.0.1
+  port: 7777

@@ -1,0 +1,36 @@
+# secrets & local state
+.env
+*.env
+!.env.example
+gmail-token.json
+chrome-profile/
+receipts/
+
+# data
+*.db
+*.db-shm
+*.db-wal
+*.jsonl
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+.uv/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# models (large; see voice/jervis_voice/models/README.md)
+voice/jervis_voice/models/*.onnx
+voice/jervis_voice/models/*.tflite
+
+# macOS
+.DS_Store
+
+# rendered launchd plist
+daemon/com.arup.jervis.plist
