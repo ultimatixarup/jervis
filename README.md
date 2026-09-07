@@ -3,7 +3,7 @@
 An always-on, voice-driven personal agent for macOS. Claude is the brain; MCP servers are
 the hands. See `PLAN.md` for the full design and phase plan.
 
-Status: **Phase 2**. Jervis works from the keyboard; the voice loop is Phase 3.
+Status: **Phase 3**. Jervis listens and talks back.
 
 ## Quickstart
 
@@ -14,7 +14,17 @@ scripts/grant-permissions.sh  # macOS privacy panes, one at a time
 scripts/doctor.sh             # must be all PASS
 ```
 
-Put your Anthropic API key in `~/.jervis/.env`, then talk to it by typing:
+Put your Anthropic API key in `~/.jervis/.env`, then talk to it:
+
+```bash
+scripts/start.sh              # brain + microphone; say "Hey Jarvis, ..."
+```
+
+The wake word is **"Hey Jarvis"** until a custom model is trained - see
+`scripts/train-wakeword.sh`. Check the audio stack on its own with
+`scripts/test-voice.sh`.
+
+Or type instead of talking:
 
 ```bash
 uv run jervis repl            # conversation; Ctrl-D to leave
@@ -24,7 +34,7 @@ uv run jervis audit           # every tool call, most recent last
 uv run jervis serve           # the HTTP endpoint on localhost:7777
 ```
 
-Voice (`scripts/start.sh`) arrives in Phase 3.
+
 
 When you're happy with it, `daemon/install.sh` (Phase 7) runs it at login forever.
 

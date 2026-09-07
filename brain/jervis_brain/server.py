@@ -7,7 +7,7 @@ added later without touching the agent (PLAN.md §1).
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -64,10 +64,23 @@ async def build_runtime(config: Config | None = None) -> Runtime:
     return Runtime(config, pool, memory, Agent(client, pool, guard, memory, config))
 
 
-def create_app(runtime: Runtime | None = None) -> FastAPI:
+RuntimeFactory = Callable[[], Awaitable[Runtime]]
+
+
+def create_app(
+    runtime: Runtime | None = None, runtime_factory: RuntimeFactory | None = None
+) -> FastAPI:
+    """Build the app.
+
+    `runtime_factory` is awaited inside the lifespan, so whatever it creates lives on
+    the same event loop that serves requests. That matters: the MCP sessions hold
+    anyio streams, and driving them from a different loop than the one they were
+    created on deadlocks rather than erroring.
+    """
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        state = runtime or await build_runtime()
+        state = runtime or (await runtime_factory() if runtime_factory else await build_runtime())
         app.state.runtime = state
         if state.pool.failures:
             log.error("some MCP servers failed to start: %s", state.pool.failures)

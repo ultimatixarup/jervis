@@ -70,3 +70,17 @@ def test_extra_destructive_patterns(tmp_path: Path) -> None:
 def test_an_empty_file_is_all_defaults(tmp_path: Path) -> None:
     (tmp_path / "c.yaml").write_text("")
     assert load_config(tmp_path / "c.yaml", load_env=False) == Config()
+
+
+def test_unknown_voice_keys_are_ignored(tmp_path: Path) -> None:
+    """The voice package owns that section; a new key there must not break the brain."""
+    (tmp_path / "c.yaml").write_text("voice:\n  tts_voice: Fiona\n  something_invented_later: 42\n")
+    config = load_config(tmp_path / "c.yaml", load_env=False)
+    assert config.voice.tts_voice == "Fiona"
+
+
+def test_voice_defaults_survive_a_partial_section(tmp_path: Path) -> None:
+    (tmp_path / "c.yaml").write_text("voice:\n  wake_threshold: 0.8\n")
+    voice = load_config(tmp_path / "c.yaml", load_env=False).voice
+    assert voice.wake_threshold == 0.8
+    assert voice.tts_backend == "say"

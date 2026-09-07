@@ -50,6 +50,11 @@ task. Do not "simplify" that back into an `AsyncExitStack` that `start()` enters
 `stop()` closes — it works until setup and teardown land in different tasks, then
 fails with "attempted to exit cancel scope in a different task".
 
+**Event loops and MCP sessions.** The MCP client sessions must be created on the same
+event loop that later uses them, or calls deadlock silently rather than erroring. That
+is why `create_app` takes a `runtime_factory` awaited inside the lifespan, and why the
+voice tests use it instead of building a pool up front.
+
 ## Test file naming
 
 Test files carry their member as a prefix — `test_macos_safety.py`,

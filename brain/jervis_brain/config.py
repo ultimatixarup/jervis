@@ -19,11 +19,26 @@ def _expand(value: str) -> Path:
 
 @dataclass(frozen=True)
 class VoiceConfig:
+    """The voice section, as the brain sees it.
+
+    The voice package owns these settings and reads the same file itself; the brain
+    only carries them so `jervis status` can show them. Unknown keys are ignored
+    rather than raising, so adding a voice setting never breaks the brain.
+    """
+
     wake_model: str = "hey_jarvis"
     wake_threshold: float = 0.6
+    wake_cooldown_seconds: float = 2.0
     stt_model: str = "mlx-community/whisper-small.en-mlx"
     tts_backend: str = "say"
     tts_voice: str = "Daniel"
+    silence_ms: int = 700
+    max_utterance_ms: int = 15_000
+
+    @classmethod
+    def from_raw(cls, raw: dict[str, Any]) -> VoiceConfig:
+        known = {f for f in cls.__dataclass_fields__}
+        return cls(**{k: v for k, v in raw.items() if k in known})
 
 
 @dataclass(frozen=True)
@@ -117,7 +132,7 @@ def load_config(path: str | Path | None = None, *, load_env: bool = True) -> Con
         max_tokens=int(raw.get("max_tokens", defaults.max_tokens)),
         effort=raw.get("effort", defaults.effort),
         persona_name=raw.get("persona_name", defaults.persona_name),
-        voice=VoiceConfig(**{**vars(VoiceConfig()), **voice_raw}),
+        voice=VoiceConfig.from_raw(voice_raw),
         servers=servers,
         permissions=PermissionsConfig(
             confirm_window_seconds=int(

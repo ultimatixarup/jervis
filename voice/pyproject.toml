@@ -6,7 +6,19 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "httpx>=0.27",
     "pyyaml>=6.0",
+    "numpy>=2.0",
+    "sounddevice>=0.5",
+    # webrtcvad 2.0.10 imports pkg_resources, removed in setuptools >= 81. This fork
+    # ships current wheels and the same C extension.
+    "webrtcvad-wheels>=2.0.14",
+    "openwakeword>=0.6",
+    # Apple Silicon only. faster-whisper is the documented fallback elsewhere; Jervis
+    # targets Arup's M-series Mac, so this is the default and the only one wired up.
+    "mlx-whisper>=0.4; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
+
+[project.scripts]
+jervis-voice = "jervis_voice.__main__:main"
 
 [build-system]
 requires = ["hatchling"]

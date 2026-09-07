@@ -36,6 +36,7 @@ SCRIPTS = [
     "test.sh",
     "test-e2e.sh",
     "test-voice.sh",
+    "train-wakeword.sh",
     "logs.sh",
 ]
 

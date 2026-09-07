@@ -7,11 +7,16 @@ max_tool_rounds: 12
 persona_name: Jervis
 
 voice:
-  wake_model: hey_jarvis        # built-in openwakeword model; switch to `jervis` once trained
-  wake_threshold: 0.6
+  # Until a custom model is trained the wake phrase is literally "Hey Jarvis".
+  # scripts/train-wakeword.sh explains how to get to "Jervis".
+  wake_model: hey_jarvis        # or `jervis` once trained; see voice/jervis_voice/models/
+  wake_threshold: 0.6           # raise this first if it misfires
+  wake_cooldown_seconds: 2.0
   stt_model: mlx-community/whisper-small.en-mlx
-  tts_backend: say              # say | kokoro | elevenlabs
+  tts_backend: say              # say | elevenlabs  (kokoro is not wired up)
   tts_voice: Daniel
+  silence_ms: 700               # how long a pause ends an utterance
+  max_utterance_ms: 15000
 
 # Enable a server once its phase has landed. An enabled server that does not exist
 # yet is not fatal - the brain reports it and carries on - but it logs an error on
