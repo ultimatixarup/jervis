@@ -8,6 +8,9 @@ acceptance tests.
 - Python 3.12, `uv` workspace. `ruff format` + `ruff check`, `mypy --strict` on `brain/`.
 - Every MCP tool declares its tier in its `annotations` under `x-jervis-tier`
   (`read` | `write` | `confirm`). A tool without a tier fails `test_all_tools_have_tier`.
+- **Never** pass Claude Code a permission-bypass flag (`--dangerously-skip-permissions`,
+  `--permission-mode bypassPermissions`, `--add-dir`). A voice agent must not be able
+  to hand it a blank cheque; a test greps `mcp/claudecode` for exactly this.
 - **Never** add a tool that moves money, changes security settings, or reads/writes
   `~/.ssh` or the Keychain's contents. Those are `blocked`: the tool must not exist.
   (`security add-generic-password` for Jervis's *own* Plaid token in Phase 5 is the one

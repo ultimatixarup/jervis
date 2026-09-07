@@ -1,5 +1,14 @@
 [tool.uv.workspace]
-members = ["brain", "voice", "mcp/macos", "mcp/imessage", "mcp/mail", "mcp/bank", "mcp/ubereats"]
+members = [
+    "brain",
+    "voice",
+    "mcp/macos",
+    "mcp/imessage",
+    "mcp/mail",
+    "mcp/bank",
+    "mcp/ubereats",
+    "mcp/claudecode",
+]
 
 [dependency-groups]
 dev = [
@@ -25,6 +34,11 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "W", "ARG", "RUF"]
 
+[tool.ruff.lint.per-file-ignores]
+# A pytest fixture arrives as an argument whether or not the test body names it,
+# and a stubbed callable must accept the arguments the real one is called with.
+"**/tests/**" = ["ARG001", "ARG002", "ARG005"]
+
 [tool.ruff.lint.isort]
 # Workspace members are installed into the venv, so ruff would otherwise sort them
 # as third-party.
@@ -39,13 +53,14 @@ known-first-party = [
     "jervis_mcp_mail",
     "jervis_mcp_bank",
     "jervis_mcp_ubereats",
+    "jervis_mcp_claudecode",
 ]
 
 [tool.mypy]
 python_version = "3.12"
 # Without this, brain/jervis_brain/x.py resolves as both `brain.jervis_brain.x` and the
 # installed `jervis_brain.x`, and mypy refuses to check either.
-mypy_path = ["brain", "tests/fixtures", "tests/e2e", "voice", "mcp/macos", "mcp/imessage", "mcp/mail", "mcp/bank", "mcp/ubereats"]
+mypy_path = ["brain", "tests/fixtures", "tests/e2e", "voice", "mcp/macos", "mcp/imessage", "mcp/mail", "mcp/bank", "mcp/ubereats", "mcp/claudecode"]
 strict = true
 warn_unreachable = true
 namespace_packages = true

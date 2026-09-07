@@ -6,6 +6,7 @@ requires-python = "==3.12.*"
 members = [
     "jervis-brain",
     "jervis-mcp-bank",
+    "jervis-mcp-claudecode",
     "jervis-mcp-imessage",
     "jervis-mcp-macos",
     "jervis-mcp-mail",
@@ -489,6 +490,21 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "mcp", specifier = ">=1.2" }]
+
+[[package]]
+name = "jervis-mcp-claudecode"
+version = "0.1.0"
+source = { editable = "mcp/claudecode" }
+dependencies = [
+    { name = "mcp" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mcp", specifier = ">=1.2" },
+    { name = "pyyaml", specifier = ">=6.0" },
+]
 
 [[package]]
 name = "jervis-mcp-imessage"

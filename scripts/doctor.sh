@@ -76,6 +76,13 @@ else
   record "microphone" FAIL "no audio input device found"
 fi
 
+# --- Claude Code --------------------------------------------------------------
+if command -v claude >/dev/null 2>&1; then
+  record "claude code" PASS "$(claude --version 2>&1 | head -1)"
+else
+  record "claude code" WARN "not on PATH; disable the claudecode server or install it"
+fi
+
 # --- macOS privacy permissions ------------------------------------------------
 CHAT_DB="$HOME/Library/Messages/chat.db"
 if [ ! -f "$CHAT_DB" ]; then

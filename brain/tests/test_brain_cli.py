@@ -21,11 +21,11 @@ class StubAgent:
     asked: list[str] = field(default_factory=list)
     confirmed: list[str] = field(default_factory=list)
 
-    async def ask(self, text: str, session_id: str = "s") -> Turn:  # noqa: ARG002
+    async def ask(self, text: str, session_id: str = "s") -> Turn:
         self.asked.append(text)
         return self.turns.pop(0)
 
-    async def confirm(self, text: str, session_id: str = "s") -> Turn:  # noqa: ARG002
+    async def confirm(self, text: str, session_id: str = "s") -> Turn:
         self.confirmed.append(text)
         return self.turns.pop(0)
 

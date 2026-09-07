@@ -40,6 +40,11 @@ When you're happy with it, `daemon/install.sh` (Phase 7) runs it at login foreve
 Moving money, formatting disks, changing security settings, and touching `~/.ssh` or the
 Keychain are `blocked` by construction, not by prompt.
 
+Jervis can also delegate coding work to Claude Code (`mcp/claudecode`). Asking it
+questions is read-only; having it change code is `confirm`-tier, is confined to the
+project directories listed in `~/.jervis/config.yaml`, and never receives a
+permission-bypass flag. See PLAN.md §4b.
+
 Every tool call is appended to `~/.jervis/audit.jsonl` — read it with `jervis audit`.
 
 ## Typed endpoint
@@ -53,7 +58,8 @@ driven — and tested — without a microphone.
 ```
 brain/    Claude tool-use loop, permission guard, memory, HTTP endpoint
 voice/    wake word, speech-to-text, text-to-speech, the listening loop
-mcp/      one MCP server per capability: macos, imessage, mail, bank, ubereats
+mcp/      one MCP server per capability: macos, claudecode, imessage, mail,
+          bank, ubereats
 daemon/   launchd agent (Phase 7)
 scripts/  setup, doctor, permissions, start/stop, tests
 tests/    end-to-end scripted conversations and shared fixtures

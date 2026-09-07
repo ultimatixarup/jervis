@@ -94,7 +94,18 @@ class Decision:
 # --- classification -----------------------------------------------------------------
 
 # Argument names that carry a filesystem path, for the blocked-path check.
-_PATH_ARGS = ("path", "cwd", "root", "directory", "dir", "file", "destination", "src", "dst")
+_PATH_ARGS = (
+    "path",
+    "cwd",
+    "root",
+    "directory",
+    "dir",
+    "file",
+    "destination",
+    "src",
+    "dst",
+    "project",
+)
 # Argument names that carry free text which may name a path or a command.
 _TEXT_ARGS = ("cmd", "command", "script", "query")
 

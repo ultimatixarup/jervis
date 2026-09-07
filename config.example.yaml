@@ -22,6 +22,21 @@ servers:
   mail:     { enabled: false }                # Phase 4
   bank:     { enabled: false, env: sandbox }  # Phase 5
   ubereats: { enabled: false }                # Phase 6
+  claudecode: { enabled: true }               # delegate coding work to Claude Code
+
+# Claude Code can read and edit whatever it is pointed at, so these limits live here
+# rather than in anything the model can ask for. `ask` is always read-only; `run_task`
+# edits files and is confirm-tier, so Jervis reads it back before running it.
+claudecode:
+  projects:                     # Claude Code may only ever run inside these
+    - ~/code
+  model: ""                     # empty = whatever Claude Code uses by default
+  max_turns: 30
+  ask_timeout_seconds: 120
+  task_timeout_seconds: 600
+  # Shell commands run_task may use. Empty means it can edit files but run nothing.
+  # e.g. ["Bash(git status:*)", "Bash(git diff:*)", "Bash(npm test:*)"]
+  extra_allowed_tools: []
 
 permissions:
   confirm_window_seconds: 60

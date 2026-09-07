@@ -58,6 +58,11 @@ OVERWRITE = {"x-jervis-tier": "write", "x-jervis-escalates-on": "overwrites-exis
         ("macos.list_dir", {"path": "~/Library/Keychains"}, READ, Tier.BLOCKED),
         ("macos.run_shell", {"cmd": "cat ~/.ssh/id_rsa"}, SHELL, Tier.BLOCKED),
         ("macos.write_file", {"path": "/System/x", "content": "y"}, OVERWRITE, Tier.BLOCKED),
+        # claudecode: a project argument is a path, and blocked roots win
+        ("claudecode.ask", {"question": "q", "project": "jervis"}, READ, Tier.READ),
+        ("claudecode.run_task", {"instruction": "i", "project": "jervis"}, CONFIRM, Tier.CONFIRM),
+        ("claudecode.run_task", {"instruction": "i", "project": "~/.ssh"}, CONFIRM, Tier.BLOCKED),
+        ("claudecode.ask", {"question": "q", "project": "/System/Library"}, READ, Tier.BLOCKED),
         # a tool with no declared tier cannot run at all
         ("mystery.tool", {}, {}, Tier.BLOCKED),
         ("mystery.tool", {}, None, Tier.BLOCKED),

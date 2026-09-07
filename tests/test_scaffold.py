@@ -23,6 +23,7 @@ WORKSPACE_MEMBERS = [
     "mcp/mail",
     "mcp/bank",
     "mcp/ubereats",
+    "mcp/claudecode",
 ]
 
 SCRIPTS = [
@@ -75,7 +76,14 @@ def test_config_example_has_the_keys_the_code_will_read() -> None:
     for key in ("model", "max_tool_rounds", "persona_name", "voice", "servers", "permissions"):
         assert key in config, f"config.example.yaml is missing {key!r}"
     assert config["model"].startswith("claude-"), "model must be a real Claude model id"
-    assert set(config["servers"]) == {"macos", "imessage", "mail", "bank", "ubereats"}
+    assert set(config["servers"]) == {
+        "macos",
+        "imessage",
+        "mail",
+        "bank",
+        "ubereats",
+        "claudecode",
+    }
     assert config["permissions"]["confirm_window_seconds"] == 60
 
 

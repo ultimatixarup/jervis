@@ -19,9 +19,16 @@ def test_reads_the_shipped_example() -> None:
     """config.example.yaml is what setup.sh installs, so it must actually parse."""
     config = load_config(Path(__file__).parents[2] / "config.example.yaml", load_env=False)
     assert config.model.startswith("claude-")
-    assert {s.name for s in config.servers} == {"macos", "imessage", "mail", "bank", "ubereats"}
+    assert {s.name for s in config.servers} == {
+        "macos",
+        "imessage",
+        "mail",
+        "bank",
+        "ubereats",
+        "claudecode",
+    }
     # Only phases that have landed are enabled; see the comment in the example file.
-    assert {s.name for s in config.enabled_servers} == {"macos"}
+    assert {s.name for s in config.enabled_servers} == {"macos", "claudecode"}
     assert config.voice.tts_backend == "say"
     assert config.http.port == 7777
 

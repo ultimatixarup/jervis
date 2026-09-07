@@ -355,6 +355,45 @@ Tests
 
 ---
 
+## 4b. Addendum — `mcp/claudecode` (added after Phase 2)
+
+Not in the original phase plan. Jervis can delegate coding work to the Claude Code
+CLI, which is installed on this Mac.
+
+Tools (name → tier)
+- `list_code_projects()` → `read`: the projects Claude Code may work in.
+- `ask(question, project, session_id?)` → `read`: runs `claude -p --permission-mode plan`
+  with `Read`, `Glob` and `Grep` as the only allowed tools. It cannot change anything.
+- `run_task(instruction, project, session_id?)` → `confirm`: runs
+  `claude -p --permission-mode acceptEdits`. It edits files, so Jervis reads the
+  instruction back and waits for a spoken yes.
+- `review_changes(project)` → `read`: `git status --short`, so you can hear what changed.
+
+Boundaries, all of which come from `~/.jervis/config.yaml` and none of which any tool
+argument can widen:
+- `claudecode.projects` lists the only directories Claude Code may run in. A path
+  outside them, or inside a blocked root, is refused by the server *and* by the
+  brain's guard (`project` is treated as a path argument).
+- `--dangerously-skip-permissions`, `bypassPermissions` and `--add-dir` are never
+  passed. `test_no_permission_bypass_flag_appears_anywhere_in_the_source` greps the
+  server to keep it that way, in the spirit of the Phase 5 money-movement grep.
+- `run_task` gets no `Bash` tool by default. Under `acceptEdits` a tool that is not
+  auto-approved is *denied* in non-interactive mode rather than prompting, so Claude
+  Code can edit files but cannot run commands until specific ones are allow-listed in
+  `claudecode.extra_allowed_tools`. `Bash(rm:*)`, `Bash(sudo:*)`, `Bash(git push:*)`,
+  `Bash(curl:*)`, `Bash(ssh:*)` and `WebFetch` are denied permanently.
+- Every result reports what the session cost and anything Claude Code was refused, so
+  a denied tool surfaces instead of looking like a bad answer.
+
+Known limits
+- Calls are synchronous and bounded by `task_timeout_seconds` (default 600). A voice
+  agent blocking for ten minutes is poor; `claude --background` plus `claude agents`
+  would fix it and is the obvious follow-up.
+- Claude Code uses its own authentication. If `ANTHROPIC_API_KEY` is set in Jervis's
+  environment it will bill that key rather than a Claude subscription.
+
+---
+
 ## 5. Testing strategy summary
 
 | Layer | Tool | Runs in | Command |
