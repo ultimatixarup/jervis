@@ -25,6 +25,19 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "W", "ARG", "RUF"]
 
+[tool.ruff.lint.isort]
+# Workspace members are installed into the venv, so ruff would otherwise sort them
+# as third-party.
+known-first-party = [
+    "jervis_brain",
+    "jervis_voice",
+    "jervis_mcp_macos",
+    "jervis_mcp_imessage",
+    "jervis_mcp_mail",
+    "jervis_mcp_bank",
+    "jervis_mcp_ubereats",
+]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true
@@ -48,4 +61,6 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-omit = ["*/tests/*"]
+# __main__.py is exercised by the stdio integration tests, but in a subprocess that
+# coverage does not instrument - measuring it here would only ever report 0%.
+omit = ["*/tests/*", "*/__main__.py"]

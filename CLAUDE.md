@@ -32,6 +32,18 @@ Add a phase's third-party dependencies to that member's own `pyproject.toml` whe
 start the phase, not before — it keeps `uv sync` fast and Phase 0 installable on a bare
 machine.
 
+## Test file naming
+
+Test files carry their member as a prefix — `test_macos_safety.py`,
+`test_imessage_db.py`, `test_brain_permissions.py`. Two reasons, both load-bearing:
+
+- pytest's default import mode requires unique basenames when test directories have
+  no `__init__.py`, and every member's directory is called `tests/`.
+- The repo has a top-level `mcp/` directory (PLAN.md §3) with the same name as the
+  installed MCP SDK. Under `--import-mode=importlib` pytest synthesizes an `mcp`
+  namespace package for it, which then shadows the real SDK and breaks every import.
+  Staying on the default import mode with unique basenames avoids that entirely.
+
 ## Commits
 
 One commit per phase, message `phase N: <summary>`, then `git tag phase-N`. Small

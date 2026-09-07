@@ -100,6 +100,14 @@ case "$ax" in
   *)     record "Accessibility" FAIL "${ax%%$'\n'*}" ;;
 esac
 
+shot="$(mktemp -t jervis-doctor).png"
+if screencapture -x "$shot" 2>/dev/null && [ -s "$shot" ]; then
+  record "Screen Recording" PASS "screencapture works"
+else
+  record "Screen Recording" FAIL "denied - scripts/grant-permissions.sh (screenshot tool)"
+fi
+rm -f "$shot"
+
 # --- report -------------------------------------------------------------------
 printf '\n%-22s %-6s %s\n' "CHECK" "RESULT" "DETAIL"
 printf '%s\n' "----------------------------------------------------------------------"

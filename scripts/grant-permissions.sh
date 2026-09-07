@@ -15,7 +15,7 @@ pane() { # title  url  instructions...
   read -r -p "   Press Enter once you have granted it: " _
 }
 
-say "Jervis needs four macOS permissions. Grant them for your terminal app"
+say "Jervis needs five macOS permissions. Grant them for your terminal app"
 say "(Terminal.app / iTerm / whichever you run scripts/start.sh from)."
 
 pane "Full Disk Access" \
@@ -34,6 +34,11 @@ pane "Accessibility" \
   "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility" \
   "Needed for System Events UI scripting (window and app control)." \
   "Click +, add your terminal app, switch it ON."
+
+pane "Screen Recording" \
+  "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture" \
+  "Needed for the screenshot tool." \
+  "Switch your terminal app ON. macOS will ask you to quit and reopen it."
 
 pane "Microphone" \
   "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone" \
