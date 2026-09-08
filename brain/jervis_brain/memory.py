@@ -209,10 +209,15 @@ class MemoryStore:
             rows = list(cur.fetchall())
         messages = [{"role": r["role"], "content": json.loads(r["content"])} for r in rows]
         messages.reverse()
-        return _drop_leading_tool_results(messages)
+        return drop_dangling_tool_uses(_drop_leading_tool_results(messages))
 
     def replace_history(self, session_id: str, messages: Sequence[dict[str, Any]]) -> None:
-        """Persist a whole conversation window, replacing what was there."""
+        """Persist a whole conversation window, replacing what was there.
+
+        Never stores a turn ending in an unanswered tool_use - see
+        drop_dangling_tool_uses. A suspended turn keeps its own copy in memory.
+        """
+        messages = drop_dangling_tool_uses(list(messages))
         with closing(self._conn.cursor()) as cur:
             cur.execute("DELETE FROM conversations WHERE session_id = ?", (session_id,))
             cur.executemany(
@@ -229,6 +234,33 @@ class MemoryStore:
         with closing(self._conn.cursor()) as cur:
             cur.execute("SELECT DISTINCT session_id FROM conversations ORDER BY session_id")
             return [r["session_id"] for r in cur.fetchall()]
+
+
+def drop_dangling_tool_uses(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop a trailing assistant turn whose tool_use blocks were never answered.
+
+    The API requires every tool_use to be followed by its tool_result. A turn that
+    suspends for confirmation has asked for tools but not run them, so saving it
+    verbatim leaves history the API will reject - and once saved, *every* later
+    message in that session fails with a 400. That is unrecoverable without this,
+    because the offending turn is replayed each time.
+
+    Repairing on both save and load means an already-corrupted session heals itself
+    the next time it is read.
+    """
+    while messages and _has_unanswered_tool_use(messages):
+        messages.pop()
+    return messages
+
+
+def _has_unanswered_tool_use(messages: list[dict[str, Any]]) -> bool:
+    last = messages[-1]
+    if last.get("role") != "assistant":
+        return False
+    content = last.get("content")
+    if not isinstance(content, list):
+        return False
+    return any(isinstance(block, dict) and block.get("type") == "tool_use" for block in content)
 
 
 def _drop_leading_tool_results(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:

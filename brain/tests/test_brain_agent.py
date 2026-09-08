@@ -589,3 +589,109 @@ async def test_a_sink_that_raises_does_not_break_the_turn(harness: Harness) -> N
 
     turn = await harness.agent([[text("Fine.")]]).ask("hi", session_id="s", on_event=angry)
     assert turn.reply == "Fine."
+
+
+# --- parallel confirm-tier calls ------------------------------------------------------
+#
+# The bug this covers, found in real use: "delete these five things" is ONE assistant
+# message with five tool_use blocks. Suspending on the first and answering only that
+# one left four unanswered, and the API rejects the next request with a 400 - for
+# every later message in that session, because the bad turn is replayed each time.
+
+
+async def test_a_confirmed_parallel_round_answers_every_call(
+    harness: Harness, tmp_path: Path
+) -> None:
+    doomed = [tmp_path / f"file{i}.txt" for i in range(3)]
+    for path in doomed:
+        path.write_text("x")
+
+    agent = harness.agent(
+        [
+            [
+                tool_use("macos__move_to_trash", {"path": str(doomed[0])}, "tu_0"),
+                tool_use("macos__move_to_trash", {"path": str(doomed[1])}, "tu_1"),
+                tool_use("macos__move_to_trash", {"path": str(doomed[2])}, "tu_2"),
+            ],
+            [text("All three gone.")],
+        ]
+    )
+    await agent.ask("bin all three", session_id="s")
+    # Three confirmations, one per call - each suspends the round in turn.
+    await agent.confirm("no", session_id="s")
+    await agent.confirm("no", session_id="s")
+    turn = await agent.confirm("no", session_id="s")
+
+    assert not turn.awaiting_confirmation
+    stored = harness.memory.history("s")
+    results = [
+        block
+        for message in stored
+        if isinstance(message["content"], list)
+        for block in message["content"]
+        if isinstance(block, dict) and block.get("type") == "tool_result"
+    ]
+    assert {r["tool_use_id"] for r in results} == {"tu_0", "tu_1", "tu_2"}, (
+        "every tool_use must be answered or the next request is a 400"
+    )
+    assert all(path.exists() for path in doomed)
+
+
+@pytest.mark.macos
+async def test_mixed_answers_across_a_parallel_round(harness: Harness, tmp_path: Path) -> None:
+    """Yes to one, no to another: only the approved one runs."""
+    keep, bin_it = tmp_path / "keep.txt", tmp_path / "bin.txt"
+    keep.write_text("x")
+    bin_it.write_text("x")
+
+    agent = harness.agent(
+        [
+            [
+                tool_use("macos__move_to_trash", {"path": str(keep)}, "tu_keep"),
+                tool_use("macos__move_to_trash", {"path": str(bin_it)}, "tu_bin"),
+            ],
+            [text("Done what you asked.")],
+        ]
+    )
+    await agent.ask("sort these out", session_id="s")
+    await agent.confirm("no", session_id="s")
+    turn = await agent.confirm("yes", session_id="s")
+
+    assert keep.exists(), "the declined one must survive"
+    assert not bin_it.exists(), "the approved one must run"
+    assert turn.tool_calls == ["macos.move_to_trash"], "only the approved call counts"
+
+
+async def test_a_pause_never_persists_an_unanswered_tool_use(
+    harness: Harness, tmp_path: Path
+) -> None:
+    """What made the failure permanent: the dangling turn was saved, so every later
+    message replayed it and failed, even after a restart."""
+    doomed = tmp_path / "r.pdf"
+    doomed.write_text("x")
+    agent = harness.agent([[tool_use("macos__move_to_trash", {"path": str(doomed)})]])
+    await agent.ask("bin it", session_id="s")
+
+    stored = harness.memory.history("s")
+    assert stored, "the question itself should survive"
+    last = stored[-1]
+    unanswered = (
+        last["role"] == "assistant"
+        and isinstance(last["content"], list)
+        and any(b.get("type") == "tool_use" for b in last["content"])
+    )
+    assert not unanswered, "saved history must never end on an unanswered tool_use"
+
+
+async def test_a_session_broken_by_an_older_version_heals_on_read(
+    harness: Harness, tmp_path: Path
+) -> None:
+    """Repairs the databases already in this state."""
+    harness.memory.append_message("broken", "user", "delete the big files")
+    harness.memory.append_message(
+        "broken",
+        "assistant",
+        [{"type": "tool_use", "id": "tu_x", "name": "macos__move_to_trash", "input": {}}],
+    )
+    history = harness.memory.history("broken")
+    assert history == [{"role": "user", "content": "delete the big files"}]

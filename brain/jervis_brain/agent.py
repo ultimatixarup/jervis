@@ -73,13 +73,37 @@ class Turn:
 
 @dataclass
 class _Paused:
-    """A turn suspended waiting on a spoken yes."""
+    """A turn suspended waiting on a spoken yes.
+
+    `results` and `remaining` are what make a *parallel* round resumable. A model can
+    ask for several tools in one message - "delete these five things" is one message
+    with five tool_use blocks - and the API requires every one of them to be answered
+    in the next message. Resuming only the confirmed call leaves its siblings dangling
+    and every later request in that session fails with a 400.
+    """
 
     pending: PendingConfirmation
     messages: list[dict[str, Any]]
     tool_use_id: str
     tool_calls: list[str]
     rounds_used: int
+    # Results for the blocks already executed before the pause.
+    results: list[dict[str, Any]] = field(default_factory=list)
+    # The blocks still to run, the pending one first.
+    remaining: list[dict[str, Any]] = field(default_factory=list)
+    performed_action: bool = False
+
+
+@dataclass
+class _Round:
+    """What one pass over a message's tool_use blocks produced."""
+
+    results: list[dict[str, Any]] | None  # None means the turn suspended
+    performed_action: bool
+
+    @property
+    def suspended(self) -> bool:
+        return self.results is None
 
 
 class Agent:
@@ -157,52 +181,152 @@ class Agent:
         approved: bool,
         on_event: EventSink = discard,
     ) -> Turn:
+        """Answer the outstanding confirmation and finish the round it interrupted.
+
+        The round may hold several tool calls; the rest still have to run (or be
+        refused) before the model can be given anything, because the API demands a
+        result for every tool_use in the message.
+        """
         del self._paused[session_id]
-        started = time.monotonic()
-        outcome = await self.guard.execute(
-            paused.pending.tool,
-            paused.pending.args,
-            self.pool.meta_for(paused.pending.tool),
-            self.pool.call,
-            session_id=session_id,
-            confirmed=approved,
-        )
-        # The ToolStarted for this call went out on the turn that suspended; this is
-        # the ToolFinished that closes it.
-        self._emit(
-            on_event,
-            ToolFinished(
-                call_id=paused.tool_use_id,
-                tool=paused.pending.tool,
-                ok=not outcome.is_error,
-                detail=outcome.text[:200],
-                duration_ms=int((time.monotonic() - started) * 1000),
-            ),
-        )
+        messages = paused.messages
         tool_calls = list(paused.tool_calls)
-        if approved:
-            tool_calls.append(paused.pending.tool)
-        messages = [
-            *paused.messages,
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": paused.tool_use_id,
-                        "content": outcome.content(),
-                        "is_error": outcome.is_error,
-                    }
-                ],
-            },
-        ]
+
+        round_ = await self._dispatch(
+            session_id,
+            paused.remaining,
+            messages,
+            tool_calls=tool_calls,
+            rounds_used=paused.rounds_used,
+            on_event=on_event,
+            results=paused.results,
+            confirmed_first=approved,
+            performed_action=paused.performed_action,
+        )
+        if round_.suspended:
+            return self._pause_turn(session_id, tool_calls)
+
+        messages.append({"role": "user", "content": round_.results})
         return await self._run(
             session_id,
             messages,
             tool_calls=tool_calls,
             rounds_used=paused.rounds_used,
             on_event=on_event,
+            performed_action=round_.performed_action,
         )
+
+    def _pause_turn(self, session_id: str, tool_calls: list[str]) -> Turn:
+        paused = self._paused[session_id]
+        # Deliberately not persisted with the dangling tool_use turn: MemoryStore
+        # strips it, and the in-memory _Paused carries the real state.
+        self._persist(session_id, paused.messages)
+        return Turn(
+            reply=f"{paused.pending.summary}. Shall I go ahead?",
+            session_id=session_id,
+            pending_confirmation=paused.pending.summary,
+            tool_calls=tool_calls,
+        )
+
+    async def _dispatch(
+        self,
+        session_id: str,
+        blocks: list[dict[str, Any]],
+        messages: list[dict[str, Any]],
+        *,
+        tool_calls: list[str],
+        rounds_used: int,
+        on_event: EventSink,
+        results: list[dict[str, Any]] | None = None,
+        confirmed_first: bool | None = None,
+        performed_action: bool = False,
+    ) -> _Round:
+        """Run one message's worth of tool calls, or suspend on the first that needs a yes.
+
+        `confirmed_first` applies only to blocks[0], which is how a resumed round
+        carries the answer back to the exact call that asked for it.
+        """
+        collected = list(results or [])
+
+        for index, block in enumerate(blocks):
+            qualified = from_wire_name(str(block["name"]))
+            args = dict(block.get("input") or {})
+            call_id = str(block["id"])
+            confirmed = confirmed_first if index == 0 else None
+
+            if confirmed is None:
+                self._emit(
+                    on_event,
+                    ToolStarted(
+                        call_id=call_id, tool=qualified, summary=summarise(qualified, args)
+                    ),
+                )
+            started = time.monotonic()
+            try:
+                outcome = await self.guard.execute(
+                    qualified,
+                    args,
+                    self.pool.meta_for(qualified),
+                    self.pool.call,
+                    session_id=session_id,
+                    confirmed=confirmed,
+                )
+            except NeedsConfirmation as needs:
+                self._paused[session_id] = _Paused(
+                    pending=PendingConfirmation(
+                        tool=needs.tool,
+                        args=needs.tool_args,
+                        summary=needs.summary,
+                        reason="",
+                        created_at=_now(),
+                    ),
+                    messages=messages,
+                    tool_use_id=call_id,
+                    tool_calls=tool_calls,
+                    rounds_used=rounds_used,
+                    results=collected,
+                    remaining=list(blocks[index:]),
+                    performed_action=performed_action,
+                )
+                # No ToolFinished here on purpose: the call has not run. It arrives
+                # once the answer comes back. See events.py.
+                self._emit(
+                    on_event,
+                    ConfirmationRequested(call_id=call_id, tool=needs.tool, summary=needs.summary),
+                )
+                return _Round(results=None, performed_action=performed_action)
+            except BlockedByPolicy as blocked:
+                outcome = ToolOutcome(str(blocked), is_error=True)
+            except Exception as exc:
+                log.exception("tool %s failed", qualified)
+                outcome = ToolOutcome(f"{type(exc).__name__}: {exc}", is_error=True)
+
+            self._emit(
+                on_event,
+                ToolFinished(
+                    call_id=call_id,
+                    tool=qualified,
+                    ok=not outcome.is_error,
+                    detail=outcome.text[:200],
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                ),
+            )
+            # A declined call never ran, so it is not something Jervis did.
+            # confirmed is None for an ordinary call, True when approved, False when
+            # refused - only the last of those must not be recorded.
+            if confirmed is not False:
+                tool_calls.append(qualified)
+            if not outcome.is_error and confirmed is not False and self._is_action(qualified):
+                performed_action = True
+            collected.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": call_id,
+                    "content": outcome.content(),
+                    "is_error": outcome.is_error,
+                }
+            )
+
+        return _Round(results=collected, performed_action=performed_action)
 
     async def _run(
         self,
@@ -212,8 +336,10 @@ class Agent:
         tool_calls: list[str],
         rounds_used: int,
         on_event: EventSink = discard,
+        performed_action: bool | None = None,
     ) -> Turn:
-        performed_action = any(self._is_action(name) for name in tool_calls)
+        if performed_action is None:
+            performed_action = any(self._is_action(name) for name in tool_calls)
         stopped_early = False
 
         while True:
@@ -231,83 +357,19 @@ class Agent:
                 break
 
             rounds_used += 1
-            results: list[dict[str, Any]] = []
-            for block in tool_uses:
-                qualified = from_wire_name(str(block["name"]))
-                args = dict(block.get("input") or {})
-                call_id = str(block["id"])
-                self._emit(
-                    on_event,
-                    ToolStarted(
-                        call_id=call_id, tool=qualified, summary=summarise(qualified, args)
-                    ),
-                )
-                started = time.monotonic()
-                try:
-                    outcome = await self.guard.execute(
-                        qualified,
-                        args,
-                        self.pool.meta_for(qualified),
-                        self.pool.call,
-                        session_id=session_id,
-                    )
-                except NeedsConfirmation as needs:
-                    self._paused[session_id] = _Paused(
-                        pending=PendingConfirmation(
-                            tool=needs.tool,
-                            args=needs.tool_args,
-                            summary=needs.summary,
-                            reason="",
-                            created_at=_now(),
-                        ),
-                        messages=messages,
-                        tool_use_id=str(block["id"]),
-                        tool_calls=tool_calls,
-                        rounds_used=rounds_used,
-                    )
-                    self._persist(session_id, messages)
-                    # No ToolFinished here on purpose: the call has not run. It arrives
-                    # from _resume once the answer comes back. See events.py.
-                    self._emit(
-                        on_event,
-                        ConfirmationRequested(
-                            call_id=call_id, tool=needs.tool, summary=needs.summary
-                        ),
-                    )
-                    return Turn(
-                        reply=f"{needs.summary}. Shall I go ahead?",
-                        session_id=session_id,
-                        pending_confirmation=needs.summary,
-                        tool_calls=tool_calls,
-                    )
-                except BlockedByPolicy as blocked:
-                    outcome = ToolOutcome(str(blocked), is_error=True)
-                except Exception as exc:
-                    log.exception("tool %s failed", qualified)
-                    outcome = ToolOutcome(f"{type(exc).__name__}: {exc}", is_error=True)
-
-                self._emit(
-                    on_event,
-                    ToolFinished(
-                        call_id=call_id,
-                        tool=qualified,
-                        ok=not outcome.is_error,
-                        detail=outcome.text[:200],
-                        duration_ms=int((time.monotonic() - started) * 1000),
-                    ),
-                )
-                tool_calls.append(qualified)
-                if not outcome.is_error and self._is_action(qualified):
-                    performed_action = True
-                results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": block["id"],
-                        "content": outcome.content(),
-                        "is_error": outcome.is_error,
-                    }
-                )
-            messages.append({"role": "user", "content": results})
+            round_ = await self._dispatch(
+                session_id,
+                tool_uses,
+                messages,
+                tool_calls=tool_calls,
+                rounds_used=rounds_used,
+                on_event=on_event,
+                performed_action=performed_action,
+            )
+            if round_.suspended:
+                return self._pause_turn(session_id, tool_calls)
+            performed_action = round_.performed_action
+            messages.append({"role": "user", "content": round_.results})
 
         reply = _text_of(messages[-1]) if messages else ""
         reply = honesty.enforce(reply, performed_an_action=performed_action)
