@@ -323,11 +323,14 @@ rather than two days. It is configured in `config.example.yaml`, disabled by def
 with tiers assigned in config because a third-party server cannot declare
 `x-jervis-tier` itself. See `mcp/ubereats/TESTING.md`.
 
-**One property of the original design is missing and worth restoring:** `place_order`
-was to re-validate the total to within 10% of a fresh preview. The third-party
-`checkout` takes only a `confirm` boolean, so what Jervis reads back is the instruction
-rather than the final total, and the price can move between the yes and the charge. A
-thin wrapper calling `checkout(confirm=false)` first would close that.
+**The price check from the original design is kept**, because the third-party server
+does not have one: its `checkout` takes only a `confirm` boolean, with nothing tying it
+to the figure you were shown. `mcp/ubereats` therefore runs that server as a *child*
+and never re-exposes its `checkout`. Ordering is `preview_order` (read, returns a total
+and an id) then `place_order(preview_id)` (confirm), which re-prices immediately and
+refuses outside 10%. Previews are single-use, expire in five minutes, and are discarded
+on a refusal or a cart change, so a rising price cannot be retried until it slips
+through. An unreadable total refuses rather than guesses.
 
 The original plan follows, for reference if the third-party server is ever dropped.
 

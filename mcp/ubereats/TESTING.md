@@ -17,33 +17,34 @@ reachable from Telegram.** That combination is why everything below exists.
 - Ordering runs through a browser session it stores at
   `~/.strider/ubereats/cookies.json`. Anyone with that file is logged in as you.
 
-## The tiers are yours, not the author's
+## The tiers
 
-A third-party server cannot declare `x-jervis-tier` — that key is Jervis's own
-invention — so the guard would block every one of its tools. `config.yaml` supplies
-them instead:
+Jervis runs the upstream server as a **child process** and re-exposes its tools with
+tiers of its own, so there is one browser session and one place ordering can happen:
 
-| Tools | Tier | Why |
-|---|---|---|
-| `status`, `search`, `get_restaurant`, `view_cart`, `track_order` | `read` | look, don't touch |
-| `login`, `logout`, `set_address`, `add_to_cart`, `clear_cart` | `write` | changes state, spends nothing |
-| `checkout` | `confirm` | spends money; Jervis reads it back and waits for a yes |
+| Tools | Tier |
+|---|---|
+| `status`, `search`, `get_restaurant`, `view_cart`, `track_order`, `preview_order` | `read` |
+| `login`, `logout`, `set_address`, `add_to_cart`, `clear_cart` | `write` |
+| `place_order` | `confirm` — Jervis reads it back and waits |
 
-**Anything not in that list stays blocked.** That is deliberate: `npx -y` fetches the
-latest version on every launch, so a tool added in an update must not simply start
-working. The version in `config.example.yaml` is pinned (`@0.2.1`) for the same reason
-— dropping the pin means running whatever was published most recently.
-
-Config can only *supply* a missing tier, never soften one. A test pins that, so no
-config edit can quietly demote `macos.move_to_trash` to `read`.
+The upstream version is pinned (`@0.2.1` in `child.py`), because `npx -y` otherwise
+fetches whatever was published most recently.
 
 ## Enabling it
+
+Download the browser it drives, once:
+
+```bash
+npx patchright install chromium
+```
+
+Then:
 
 ```yaml
 # ~/.jervis/config.yaml
 servers:
-  ubereats:
-    enabled: true
+  ubereats: { enabled: true }
 ```
 
 then `launchctl kickstart -k gui/$UID/com.arup.jervis`, and log in once:
@@ -61,14 +62,23 @@ It returns a URL; sign in there and the session persists.
    Check your Uber Eats order history to be sure.
 4. **Only then, a real order** — a cheap one, when you actually want food.
 
-## The gap you should know about
+## How the price check works
 
-PLAN.md §4 Phase 6 specified that `place_order` re-validate the total to within 10% of
-the preview, bound to a fresh preview id. **This server does not do that.** Its
-`checkout` takes a `confirm` boolean with nothing tying it to the figure you were
-shown, and its own README notes that "dynamic pricing and availability may differ".
+The upstream `checkout` takes only a `confirm` boolean, with nothing tying it to the
+figure you were shown — and its own README says "dynamic pricing and availability may
+differ". So Jervis does not expose it. Ordering goes:
 
-So Jervis reads back the *instruction*, not the final total. Between your yes and the
-charge, the price can move. If that matters to you, the fix is a thin Jervis-side
-wrapper that calls `checkout(confirm=false)`, shows you that total, and only then calls
-`checkout(confirm=true)` — the drift check the plan asked for. It is not built.
+1. **`preview_order`** (`read`) prices the cart, returns the total and a preview id.
+   Nothing is charged.
+2. **`place_order(preview_id)`** (`confirm`) re-prices immediately, compares against the
+   total you were shown, and places the order **only** if it is within 10%.
+
+A preview is single-use, expires after five minutes, and is discarded when the cart is
+cleared or when a placement is refused — so a rising price cannot be retried until it
+slips through. If the total cannot be read out of the preview at all, nothing is
+placed: approving one figure and being charged another is the failure this exists to
+prevent.
+
+There is no other route. A test asserts no tool named `checkout` is exposed, and that
+`confirm=True` appears exactly once in the source, inside `place_order` — in the spirit
+of the money-movement grep in PLAN.md §4 Phase 5.
