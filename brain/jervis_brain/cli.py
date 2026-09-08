@@ -1,4 +1,4 @@
-"""`jervis` - typed access to the brain, for testing without a microphone."""
+"""`jervis` - Jervis, from the keyboard."""
 
 from __future__ import annotations
 
@@ -9,10 +9,16 @@ from typing import Any
 
 import click
 
+from .agent import Turn
 from .config import load_config
 from .credentials import detect
+from .history import readline_history
 from .permissions import AuditLog
+from .prompts import Channel
+from .render import ConsoleRenderer
 from .server import Runtime, build_runtime
+
+CONFIRM_HELP = "yes / no"
 
 
 async def _with_runtime(fn: Any, *, needs_api_key: bool = False) -> Any:
@@ -24,7 +30,7 @@ async def _with_runtime(fn: Any, *, needs_api_key: bool = False) -> Any:
                 "ANTHROPIC_API_KEY in ~/.jervis/.env, or run `ant auth login`. "
                 "scripts/doctor.sh will confirm."
             )
-    runtime = await build_runtime()
+    runtime = await build_runtime(channel=Channel.TEXT)
     try:
         if runtime.pool.failures:
             click.secho(f"warning: {runtime.pool.failures}", fg="yellow", err=True)
@@ -34,8 +40,32 @@ async def _with_runtime(fn: Any, *, needs_api_key: bool = False) -> Any:
         runtime.memory.close()
 
 
-def _say(text: str) -> None:
-    click.echo(text)
+def _ask_confirmation(summary: str) -> str:
+    """Ask about a pending action. EOF or Ctrl-C means no, not a traceback."""
+    click.secho(f"  {summary}", fg="yellow")
+    try:
+        return click.prompt(f"  [{CONFIRM_HELP}]", default="no", show_default=False)
+    except (EOFError, click.Abort):
+        click.echo()
+        return "no"
+
+
+async def _exchange(runtime: Runtime, text: str, session: str) -> Turn:
+    """One complete exchange, including however many confirmations it takes.
+
+    Shared by `ask` and `repl` so the confirmation handling cannot drift apart again -
+    `ask` used to answer only the first one and drop the rest silently.
+    """
+    renderer = ConsoleRenderer()
+    turn = await runtime.agent.ask(text, session_id=session, on_event=renderer)
+    renderer.finish(turn)
+
+    while turn.awaiting_confirmation:
+        answer = _ask_confirmation(turn.pending_confirmation or "")
+        renderer = ConsoleRenderer()
+        turn = await runtime.agent.confirm(answer, session_id=session, on_event=renderer)
+        renderer.finish(turn)
+    return turn
 
 
 @click.group()
@@ -50,14 +80,61 @@ def ask(text: tuple[str, ...], session: str) -> None:
     """Ask Jervis something."""
 
     async def run(runtime: Runtime) -> None:
-        turn = await runtime.agent.ask(" ".join(text), session_id=session)
-        _say(turn.reply)
-        if turn.awaiting_confirmation:
-            answer = click.prompt("  [yes/no]", default="no")
-            follow_up = await runtime.agent.confirm(answer, session_id=session)
-            _say(follow_up.reply)
+        await _exchange(runtime, " ".join(text), session)
 
     asyncio.run(_with_runtime(run, needs_api_key=True))
+
+
+BANNER = "{name} is ready. /help for commands, Ctrl-D to leave."
+
+META_HELP = """\
+  /help            this
+  /tools           what Jervis can reach
+  /audit [n]       the last n tool calls (default 5)
+  /session [id]    show, or switch to, a conversation
+  /clear           forget this conversation
+  /quit            leave
+"""
+
+
+class Repl:
+    """The prompt loop. Meta-commands never reach the model."""
+
+    def __init__(self, runtime: Runtime, session: str) -> None:
+        self.runtime = runtime
+        self.session = session
+        self.done = False
+
+    async def handle(self, line: str) -> None:
+        if line.startswith("/"):
+            self.meta(line)
+            return
+        await _exchange(self.runtime, line, self.session)
+
+    def meta(self, line: str) -> None:
+        command, _, argument = line[1:].partition(" ")
+        argument = argument.strip()
+        match command.lower():
+            case "help" | "?":
+                click.echo(META_HELP, nl=False)
+            case "tools":
+                for tool in self.runtime.pool.tools:
+                    click.echo(f"  {tool.qualified}")
+            case "audit":
+                _print_audit(self.runtime.config.paths.audit_log, _int_or(argument, 5))
+            case "session":
+                if argument:
+                    self.session = argument
+                    click.secho(f"  now in session {argument!r}", fg="green")
+                else:
+                    click.echo(f"  session {self.session!r}")
+            case "clear":
+                self.runtime.memory.replace_history(self.session, [])
+                click.secho(f"  forgot session {self.session!r}", fg="green")
+            case "quit" | "exit":
+                self.done = True
+            case _:
+                click.secho(f"  no such command: /{command}. Try /help.", fg="red")
 
 
 @cli.command()
@@ -66,21 +143,18 @@ def repl(session: str) -> None:
     """Talk to Jervis in a loop. Ctrl-D to leave."""
 
     async def run(runtime: Runtime) -> None:
-        click.secho(f"{runtime.config.persona_name} is listening. Ctrl-D to stop.", fg="green")
-        while True:
-            try:
-                line = click.prompt("you", prompt_suffix="> ")
-            except (EOFError, click.Abort):
-                click.echo()
-                return
-            if not line.strip():
-                continue
-            turn = await runtime.agent.ask(line, session_id=session)
-            click.secho(turn.reply, fg="cyan")
-            while turn.awaiting_confirmation:
-                answer = click.prompt("  [yes/no]", default="no")
-                turn = await runtime.agent.confirm(answer, session_id=session)
-                click.secho(turn.reply, fg="cyan")
+        click.secho(BANNER.format(name=runtime.config.persona_name), fg="green")
+        loop = Repl(runtime, session)
+        with readline_history(runtime.config.paths.history):
+            while not loop.done:
+                try:
+                    line = click.prompt("you", prompt_suffix="> ")
+                except (EOFError, click.Abort):
+                    click.echo()
+                    return
+                if not line.strip():
+                    continue
+                await loop.handle(line.strip())
 
     asyncio.run(_with_runtime(run, needs_api_key=True))
 
@@ -105,17 +179,38 @@ def status() -> None:
     asyncio.run(_with_runtime(run))
 
 
-@cli.command()
-@click.option("-n", "--count", default=20, help="How many lines.")
-def audit(count: int) -> None:
-    """Print the tail of the audit log."""
-    config = load_config()
-    entries = AuditLog(config.paths.audit_log).entries()[-count:]
+def _int_or(value: str, fallback: int) -> int:
+    try:
+        return int(value)
+    except ValueError:
+        return fallback
+
+
+def _print_audit(path: Any, count: int) -> None:
+    entries = AuditLog(path).entries()[-count:]
     if not entries:
-        click.echo(f"nothing logged yet at {config.paths.audit_log}")
+        click.echo(f"  nothing logged yet at {path}")
         return
     for entry in entries:
-        click.echo(json.dumps(entry.model_dump(), indent=None))
+        mark = click.style("ok", fg="green") if entry.ok else click.style("!!", fg="red")
+        confirmed = " (confirmed)" if entry.confirmed else ""
+        click.echo(
+            f"  [{mark}] {entry.tool} ({entry.tier}){confirmed}  {entry.result_summary[:60]}"
+        )
+
+
+@cli.command()
+@click.option("-n", "--count", default=20, help="How many lines.")
+@click.option("--json", "as_json", is_flag=True, help="Raw JSON lines, for piping.")
+def audit(count: int, as_json: bool) -> None:
+    """Print the tail of the audit log."""
+    config = load_config()
+    if not as_json:
+        _print_audit(config.paths.audit_log, count)
+        return
+    entries = AuditLog(config.paths.audit_log).entries()[-count:]
+    for entry in entries:
+        click.echo(json.dumps(entry.model_dump()))
 
 
 @cli.command()

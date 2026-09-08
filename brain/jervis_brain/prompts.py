@@ -11,18 +11,44 @@ from __future__ import annotations
 import subprocess
 from collections.abc import Sequence
 from datetime import datetime
+from enum import StrEnum
 from typing import Any
 
 from .memory import Memory, summarise_memories
 
-PERSONA = """\
-You are {name}, {owner}'s personal assistant, running on {owner}'s Mac.
 
+class Channel(StrEnum):
+    """Where the answer is going to land.
+
+    The rules are identical; only the manner differs. Kept as two whole strings rather
+    than assembled per call, because the stable block is the prompt cache's prefix and
+    has to be byte-identical between turns on a channel. Two channels means two warm
+    cache entries, which is fine.
+    """
+
+    VOICE = "voice"
+    TEXT = "text"
+
+
+_HEAD = "You are {name}, {owner}'s personal assistant, running on {owner}'s Mac.\n"
+
+_MANNER_VOICE = """\
 Voice and manner: a butler's economy. Brief, dry, unhurried. One or two sentences
 unless asked for more. No filler, no "certainly", no restating the question, no
 offering three options when one will do. You are speaking aloud - write what sounds
 right spoken, not what looks right written. No markdown, no bullet points, no emoji.
+"""
 
+_MANNER_TEXT = """\
+Voice and manner: a butler's economy. Brief, dry, unhurried. Two or three sentences
+unless asked for more. No filler, no "certainly", no restating the question, no
+offering three options when one will do. You are being read, not heard, so structure
+is allowed where it genuinely helps - a short list for several items, a fenced code
+block for a command or a path. Prose by default; reach for structure only when it
+carries something a sentence would carry worse. No headings, no bold, no emoji.
+"""
+
+_RULES = """\
 How you work:
 - Use tools to find things out. Never guess at the contents of a file, a folder, a
   message or a balance.
@@ -37,6 +63,11 @@ How you work:
 - If a request is ambiguous in a way that changes what you would do, ask. Otherwise
   make the sensible call and get on with it.
 """
+
+PERSONA = {
+    Channel.VOICE: _HEAD + "\n" + _MANNER_VOICE + "\n" + _RULES,
+    Channel.TEXT: _HEAD + "\n" + _MANNER_TEXT + "\n" + _RULES,
+}
 
 
 def _frontmost_app() -> str | None:
@@ -59,8 +90,13 @@ def _frontmost_app() -> str | None:
     return name or None
 
 
-def stable_block(persona_name: str = "Jervis", owner: str = "Arup") -> str:
-    return PERSONA.format(name=persona_name, owner=owner)
+def stable_block(
+    persona_name: str = "Jervis",
+    owner: str = "Arup",
+    *,
+    channel: Channel = Channel.VOICE,
+) -> str:
+    return PERSONA[channel].format(name=persona_name, owner=owner)
 
 
 def volatile_block(
@@ -94,9 +130,13 @@ def build_system(
     frontmost: str | None = None,
     include_frontmost: bool = True,
     cache: bool = True,
+    channel: Channel = Channel.VOICE,
 ) -> list[dict[str, Any]]:
     """The system prompt, as blocks, stable part first and marked cacheable."""
-    stable: dict[str, Any] = {"type": "text", "text": stable_block(persona_name, owner)}
+    stable: dict[str, Any] = {
+        "type": "text",
+        "text": stable_block(persona_name, owner, channel=channel),
+    }
     if cache:
         stable["cache_control"] = {"type": "ephemeral"}
     volatile = {

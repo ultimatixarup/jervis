@@ -8,7 +8,7 @@ exists to catch.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
 from anthropic.types import Message, TextBlock, ToolUseBlock, Usage
@@ -34,6 +34,12 @@ def _message(blocks: Sequence[Any]) -> Message:
     )
 
 
+# Deliberately not one chunk per block: the real API delivers text in fragments, and
+# a consumer that only works when each block arrives whole is a consumer that has not
+# been tested.
+DELTA_CHARS = 7
+
+
 class _FakeStream:
     def __init__(self, blocks: Sequence[Any]) -> None:
         self._blocks = blocks
@@ -43,6 +49,19 @@ class _FakeStream:
 
     async def __aexit__(self, *_exc: object) -> None:
         return None
+
+    @property
+    def text_stream(self) -> AsyncIterator[str]:
+        """Mirrors anthropic's AsyncMessageStream.text_stream: text deltas only."""
+        return self._deltas()
+
+    async def _deltas(self) -> AsyncIterator[str]:
+        for block in self._blocks:
+            if getattr(block, "type", None) != "text":
+                continue
+            text_value = block.text
+            for start in range(0, len(text_value), DELTA_CHARS):
+                yield text_value[start : start + DELTA_CHARS]
 
     async def get_final_message(self) -> Message:
         return _message(self._blocks)

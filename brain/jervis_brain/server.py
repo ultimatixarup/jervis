@@ -16,6 +16,7 @@ import anthropic
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
+from . import prompts
 from .agent import Agent
 from .config import Config, load_config
 from .credentials import detect
@@ -73,7 +74,9 @@ class Runtime:
     agent: Agent
 
 
-async def build_runtime(config: Config | None = None) -> Runtime:
+async def build_runtime(
+    config: Config | None = None, *, channel: prompts.Channel = prompts.Channel.VOICE
+) -> Runtime:
     config = config or load_config()
     pool = MCPClientPool.from_config(config)
     await pool.start()
@@ -95,7 +98,9 @@ async def build_runtime(config: Config | None = None) -> Runtime:
     else:
         log.info("using credentials from the %s (%s)", credential.source, credential.detail)
     client = anthropic.AsyncAnthropic()
-    return Runtime(config, pool, memory, Agent(client, pool, guard, memory, config))
+    return Runtime(
+        config, pool, memory, Agent(client, pool, guard, memory, config, channel=channel)
+    )
 
 
 RuntimeFactory = Callable[[], Awaitable[Runtime]]

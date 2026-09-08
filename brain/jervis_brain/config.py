@@ -87,6 +87,7 @@ class Paths:
     audit_log: Path = DEFAULT_HOME / "audit.jsonl"
     memory_db: Path = DEFAULT_HOME / "memory.db"
     logs: Path = DEFAULT_HOME / "logs"
+    history: Path = DEFAULT_HOME / "repl_history"
 
 
 @dataclass(frozen=True)
@@ -126,6 +127,7 @@ def load_config(path: str | Path | None = None, *, load_env: bool = True) -> Con
         audit_log=_expand(paths_raw.get("audit_log", str(home / "audit.jsonl"))),
         memory_db=_expand(paths_raw.get("memory_db", str(home / "memory.db"))),
         logs=_expand(paths_raw.get("logs", str(home / "logs"))),
+        history=_expand(paths_raw.get("history", str(home / "repl_history"))),
     )
 
     voice_raw = raw.get("voice") or {}

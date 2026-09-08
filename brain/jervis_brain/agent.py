@@ -21,6 +21,15 @@ import anthropic
 
 from . import honesty, prompts
 from .config import Config
+from .events import (
+    ConfirmationRequested,
+    EventSink,
+    TextDelta,
+    ToolFinished,
+    ToolStarted,
+    TurnEvent,
+    discard,
+)
 from .mcp_client import MCPClientPool, from_wire_name, to_wire_name
 from .memory import MemoryStore
 from .permissions import (
@@ -31,6 +40,7 @@ from .permissions import (
     Tier,
     ToolOutcome,
     is_confirmation,
+    summarise,
 )
 
 log = logging.getLogger("jervis.agent")
@@ -82,6 +92,7 @@ class Agent:
         config: Config,
         *,
         include_frontmost: bool = True,
+        channel: prompts.Channel = prompts.Channel.VOICE,
     ) -> None:
         self.client = client
         self.pool = pool
@@ -91,11 +102,16 @@ class Agent:
         # Asking System Events for the frontmost app costs an osascript round trip per
         # turn; tests turn it off so they neither pay it nor touch the desktop.
         self.include_frontmost = include_frontmost
+        # On the Agent rather than per call: a resumed turn has to use the channel of
+        # the turn it resumes, and threading it through _Paused buys nothing.
+        self.channel = channel
         self._paused: dict[str, _Paused] = {}
 
     # --- public API ------------------------------------------------------------------
 
-    async def ask(self, text: str, session_id: str | None = None) -> Turn:
+    async def ask(
+        self, text: str, session_id: str | None = None, *, on_event: EventSink = discard
+    ) -> Turn:
         session_id = session_id or uuid.uuid4().hex
 
         paused = self._paused.get(session_id)
@@ -106,13 +122,17 @@ class Agent:
                 log.info("confirmation for %s expired; treating input as new", paused.pending.tool)
                 del self._paused[session_id]
             else:
-                return await self._resume(session_id, paused, approved=is_confirmation(text))
+                return await self._resume(
+                    session_id, paused, approved=is_confirmation(text), on_event=on_event
+                )
 
         messages = self.memory.history(session_id)
         messages.append({"role": "user", "content": text})
-        return await self._run(session_id, messages, tool_calls=[], rounds_used=0)
+        return await self._run(
+            session_id, messages, tool_calls=[], rounds_used=0, on_event=on_event
+        )
 
-    async def confirm(self, text: str, session_id: str) -> Turn:
+    async def confirm(self, text: str, session_id: str, *, on_event: EventSink = discard) -> Turn:
         """Answer an outstanding confirmation. Anything but a yes aborts."""
         paused = self._paused.get(session_id)
         if paused is None:
@@ -123,12 +143,22 @@ class Agent:
                 reply="That confirmation timed out, so I did nothing. Ask me again if you like.",
                 session_id=session_id,
             )
-        return await self._resume(session_id, paused, approved=is_confirmation(text))
+        return await self._resume(
+            session_id, paused, approved=is_confirmation(text), on_event=on_event
+        )
 
     # --- the loop ---------------------------------------------------------------------
 
-    async def _resume(self, session_id: str, paused: _Paused, *, approved: bool) -> Turn:
+    async def _resume(
+        self,
+        session_id: str,
+        paused: _Paused,
+        *,
+        approved: bool,
+        on_event: EventSink = discard,
+    ) -> Turn:
         del self._paused[session_id]
+        started = time.monotonic()
         outcome = await self.guard.execute(
             paused.pending.tool,
             paused.pending.args,
@@ -136,6 +166,18 @@ class Agent:
             self.pool.call,
             session_id=session_id,
             confirmed=approved,
+        )
+        # The ToolStarted for this call went out on the turn that suspended; this is
+        # the ToolFinished that closes it.
+        self._emit(
+            on_event,
+            ToolFinished(
+                call_id=paused.tool_use_id,
+                tool=paused.pending.tool,
+                ok=not outcome.is_error,
+                detail=outcome.text[:200],
+                duration_ms=int((time.monotonic() - started) * 1000),
+            ),
         )
         tool_calls = list(paused.tool_calls)
         if approved:
@@ -155,7 +197,11 @@ class Agent:
             },
         ]
         return await self._run(
-            session_id, messages, tool_calls=tool_calls, rounds_used=paused.rounds_used
+            session_id,
+            messages,
+            tool_calls=tool_calls,
+            rounds_used=paused.rounds_used,
+            on_event=on_event,
         )
 
     async def _run(
@@ -165,6 +211,7 @@ class Agent:
         *,
         tool_calls: list[str],
         rounds_used: int,
+        on_event: EventSink = discard,
     ) -> Turn:
         performed_action = any(self._is_action(name) for name in tool_calls)
         stopped_early = False
@@ -175,7 +222,7 @@ class Agent:
                 log.warning("hit max_tool_rounds=%s", self.config.max_tool_rounds)
                 break
 
-            response = await self._create(messages)
+            response = await self._create(messages, on_event=on_event)
             content = [self._block_to_dict(b) for b in response.content]
             messages.append({"role": "assistant", "content": content})
 
@@ -188,6 +235,14 @@ class Agent:
             for block in tool_uses:
                 qualified = from_wire_name(str(block["name"]))
                 args = dict(block.get("input") or {})
+                call_id = str(block["id"])
+                self._emit(
+                    on_event,
+                    ToolStarted(
+                        call_id=call_id, tool=qualified, summary=summarise(qualified, args)
+                    ),
+                )
+                started = time.monotonic()
                 try:
                     outcome = await self.guard.execute(
                         qualified,
@@ -211,6 +266,14 @@ class Agent:
                         rounds_used=rounds_used,
                     )
                     self._persist(session_id, messages)
+                    # No ToolFinished here on purpose: the call has not run. It arrives
+                    # from _resume once the answer comes back. See events.py.
+                    self._emit(
+                        on_event,
+                        ConfirmationRequested(
+                            call_id=call_id, tool=needs.tool, summary=needs.summary
+                        ),
+                    )
                     return Turn(
                         reply=f"{needs.summary}. Shall I go ahead?",
                         session_id=session_id,
@@ -223,6 +286,16 @@ class Agent:
                     log.exception("tool %s failed", qualified)
                     outcome = ToolOutcome(f"{type(exc).__name__}: {exc}", is_error=True)
 
+                self._emit(
+                    on_event,
+                    ToolFinished(
+                        call_id=call_id,
+                        tool=qualified,
+                        ok=not outcome.is_error,
+                        detail=outcome.text[:200],
+                        duration_ms=int((time.monotonic() - started) * 1000),
+                    ),
+                )
                 tool_calls.append(qualified)
                 if not outcome.is_error and self._is_action(qualified):
                     performed_action = True
@@ -254,6 +327,14 @@ class Agent:
 
     # --- helpers ----------------------------------------------------------------------
 
+    @staticmethod
+    def _emit(sink: EventSink, event: TurnEvent) -> None:
+        """Hand an event to the caller. A broken renderer must never abort a turn."""
+        try:
+            sink(event)
+        except Exception:
+            log.debug("event sink raised on %r", event, exc_info=True)
+
     def _is_action(self, qualified: str) -> bool:
         """True for tools that change something, so an honesty check applies."""
         meta = self.pool.meta_for(qualified) or {}
@@ -262,11 +343,14 @@ class Agent:
     def _persist(self, session_id: str, messages: Sequence[dict[str, Any]]) -> None:
         self.memory.replace_history(session_id, list(messages)[-20:])
 
-    async def _create(self, messages: list[dict[str, Any]]) -> Any:
+    async def _create(
+        self, messages: list[dict[str, Any]], *, on_event: EventSink = discard
+    ) -> Any:
         system = prompts.build_system(
             self._recall_for(messages),
             persona_name=self.config.persona_name,
             include_frontmost=self.include_frontmost,
+            channel=self.channel,
         )
         tools = self.pool.anthropic_tools()
 
@@ -282,6 +366,8 @@ class Agent:
                     thinking={"type": "adaptive"},
                     output_config={"effort": self.config.effort},
                 ) as stream:
+                    async for chunk in stream.text_stream:
+                        self._emit(on_event, TextDelta(chunk))
                     return await stream.get_final_message()
             except (anthropic.RateLimitError, anthropic.OverloadedError) as exc:
                 last_error = exc

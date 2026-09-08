@@ -16,6 +16,12 @@ from fake_anthropic import FakeAnthropic, text, tool_use
 
 from jervis_brain.agent import Agent
 from jervis_brain.config import Config, ServerConfig
+from jervis_brain.events import (
+    ConfirmationRequested,
+    TextDelta,
+    ToolFinished,
+    ToolStarted,
+)
 from jervis_brain.mcp_client import MCPClientPool
 from jervis_brain.memory import Kind, MemoryStore
 from jervis_brain.permissions import AuditLog, Guard
@@ -443,3 +449,143 @@ async def test_ask_generates_a_session_id_when_not_given(harness: Harness) -> No
     turn = await agent.ask("hello")
     assert turn.session_id
     assert harness.memory.history(turn.session_id)
+
+
+# --- events -------------------------------------------------------------------------
+
+
+def kinds(events: list[Any]) -> list[str]:
+    return [type(e).__name__ for e in events]
+
+
+async def test_no_sink_behaves_exactly_as_before(harness: Harness, tmp_path: Path) -> None:
+    """Guards the default path: the server and the voice loop pass no sink."""
+    (tmp_path / "a.txt").write_text("x")
+    agent = harness.agent(
+        [
+            [tool_use("macos__list_dir", {"path": str(tmp_path)})],
+            [text("One file.")],
+        ]
+    )
+    turn = await agent.ask("what's there", session_id="s")
+    assert turn.reply == "One file."
+    assert turn.tool_calls == ["macos.list_dir"]
+
+
+async def test_a_read_turn_emits_start_then_finish(harness: Harness, tmp_path: Path) -> None:
+    (tmp_path / "a.txt").write_text("x")
+    events: list[Any] = []
+    agent = harness.agent(
+        [
+            [tool_use("macos__list_dir", {"path": str(tmp_path)})],
+            [text("One file.")],
+        ]
+    )
+    await agent.ask("what's there", session_id="s", on_event=events.append)
+
+    started = next(e for e in events if isinstance(e, ToolStarted))
+    finished = next(e for e in events if isinstance(e, ToolFinished))
+    assert started.tool == "macos.list_dir"
+    # summarise() shortens a long path tail-first, so the identifying part survives.
+    assert tmp_path.name in started.summary
+    assert finished.call_id == started.call_id, "start and finish must pair by call_id"
+    assert finished.ok is True
+    assert finished.duration_ms >= 0
+    assert kinds(events).index("ToolStarted") < kinds(events).index("ToolFinished")
+
+
+async def test_parallel_calls_pair_by_call_id(harness: Harness, tmp_path: Path) -> None:
+    """Two calls to the same tool in one round: pairing by name would be ambiguous."""
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    events: list[Any] = []
+    agent = harness.agent(
+        [
+            [
+                tool_use("macos__list_dir", {"path": str(tmp_path / "a")}, "tu_a"),
+                tool_use("macos__list_dir", {"path": str(tmp_path / "b")}, "tu_b"),
+            ],
+            [text("Both empty.")],
+        ]
+    )
+    await agent.ask("compare", session_id="s", on_event=events.append)
+
+    starts = [e for e in events if isinstance(e, ToolStarted)]
+    finishes = [e for e in events if isinstance(e, ToolFinished)]
+    assert {e.call_id for e in starts} == {"tu_a", "tu_b"}
+    assert {e.call_id for e in finishes} == {"tu_a", "tu_b"}
+
+
+async def test_a_failing_tool_finishes_with_ok_false(harness: Harness, tmp_path: Path) -> None:
+    events: list[Any] = []
+    agent = harness.agent(
+        [
+            [tool_use("macos__read_file", {"path": str(tmp_path / "ghost.txt")})],
+            [text("No such file.")],
+        ]
+    )
+    await agent.ask("read it", session_id="s", on_event=events.append)
+    finished = next(e for e in events if isinstance(e, ToolFinished))
+    assert finished.ok is False
+    assert finished.detail
+
+
+async def test_a_blocked_tool_is_not_silent(harness: Harness) -> None:
+    """A refusal the user cannot see is a refusal they will not understand."""
+    events: list[Any] = []
+    agent = harness.agent(
+        [
+            [tool_use("macos__run_shell", {"cmd": "cat ~/.ssh/id_rsa"})],
+            [text("Off limits.")],
+        ]
+    )
+    await agent.ask("show my key", session_id="s", on_event=events.append)
+    finished = next(e for e in events if isinstance(e, ToolFinished))
+    assert finished.ok is False
+    assert "blocked by policy" in finished.detail
+
+
+async def test_a_confirm_tier_call_suspends_without_finishing(
+    harness: Harness, tmp_path: Path
+) -> None:
+    """ToolStarted then ConfirmationRequested; the ToolFinished lands on the resume."""
+    doomed = tmp_path / "r.pdf"
+    doomed.write_text("x")
+    events: list[Any] = []
+    agent = harness.agent(
+        [
+            [tool_use("macos__move_to_trash", {"path": str(doomed)})],
+            [text("Left alone.")],
+        ]
+    )
+    await agent.ask("bin it", session_id="s", on_event=events.append)
+
+    assert kinds(events).count("ToolStarted") == 1
+    assert kinds(events).count("ToolFinished") == 0
+    requested = next(e for e in events if isinstance(e, ConfirmationRequested))
+    started = next(e for e in events if isinstance(e, ToolStarted))
+    assert requested.call_id == started.call_id
+
+    resumed: list[Any] = []
+    await agent.confirm("no", session_id="s", on_event=resumed.append)
+    finished = next(e for e in resumed if isinstance(e, ToolFinished))
+    assert finished.call_id == started.call_id
+    assert doomed.exists()
+
+
+async def test_text_deltas_concatenate_to_the_reply(harness: Harness) -> None:
+    events: list[Any] = []
+    agent = harness.agent([[text("Ten past four.")]])
+    turn = await agent.ask("what time is it", session_id="s", on_event=events.append)
+
+    deltas = [e for e in events if isinstance(e, TextDelta)]
+    assert len(deltas) > 1, "the fixture must split text, or streaming is untested"
+    assert "".join(d.text for d in deltas) == turn.reply
+
+
+async def test_a_sink_that_raises_does_not_break_the_turn(harness: Harness) -> None:
+    def angry(_event: Any) -> None:
+        raise RuntimeError("renderer exploded")
+
+    turn = await harness.agent([[text("Fine.")]]).ask("hi", session_id="s", on_event=angry)
+    assert turn.reply == "Fine."
