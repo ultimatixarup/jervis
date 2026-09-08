@@ -16,7 +16,7 @@ import anthropic
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-from . import prompts
+from . import prompts, tracing
 from .agent import Agent
 from .config import Config, load_config
 from .credentials import detect
@@ -86,6 +86,16 @@ async def build_runtime(
         confirm_window_seconds=config.permissions.confirm_window_seconds,
         extra_destructive_patterns=config.permissions.extra_destructive_patterns,
     )
+    if config.tracing.enabled:
+        tracing.configure(
+            tracing.TracingConfig(
+                enabled=True,
+                endpoint=config.tracing.endpoint,
+                project=config.tracing.project,
+                capture_content=config.tracing.capture_content,
+            )
+        )
+
     credential = detect()
     if not credential.ok:
         # Not fatal - /health and the tool list still work - but it makes the failure
@@ -129,6 +139,8 @@ def create_app(
             if runtime is None:
                 await state.pool.stop()
                 state.memory.close()
+                # Flush whatever is still batched, or the last turn never shows up.
+                tracing.shutdown()
 
     app = FastAPI(title="Jervis", lifespan=lifespan)
 

@@ -469,6 +469,32 @@ stay enabled while the bot runs.
 
 ---
 
+## 4e. Addendum — tracing (added after Phase 7)
+
+Every turn emits OpenTelemetry spans in the GenAI semantic conventions, exported over
+OTLP to LangSmith. Three spans: `invoke_agent jervis` (chain) per exchange,
+`chat <model>` (llm) per model call with token usage and finish reason, and
+`execute_tool <name>` (tool) per call with tier, duration and outcome. Confirm-tier
+suspensions and blocked calls are visible as attributes, so a turn that asked and
+waited looks different from one that ran.
+
+LangSmith classifies runs from `langsmith.span.kind` and `gen_ai.tool.name`, and groups
+conversations by `langsmith.trace.session_id`, which is the Jervis session id - so a
+Telegram thread reads as one continuous session.
+
+**`tracing.capture_content` is off by default.** Prompts carry directory listings and
+message bodies; tool arguments carry home-directory paths; Phase 5 adds balances.
+Structure alone - what ran, in what order, how long, how many tokens, which tier,
+confirmed or not, and any error text - is enough to debug with, and does not send the
+contents anywhere. Turning it on is a deliberate choice, not a side effect of enabling
+tracing.
+
+When tracing is off, OpenTelemetry hands back a no-op tracer, so the instrumentation
+costs nothing. A dead or slow collector cannot delay a turn either: spans go through a
+BatchSpanProcessor, flushed on shutdown.
+
+---
+
 ## 5. Testing strategy summary
 
 | Layer | Tool | Runs in | Command |

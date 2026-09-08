@@ -111,6 +111,24 @@ if [ -n "$tg" ] && [ "${tg%% *}" != "SKIP" ]; then
   record "telegram" "${tg%% *}" "${tg#* }"
 fi
 
+# --- tracing (optional) -------------------------------------------------------
+tr="$(cd "$REPO_ROOT" && uv run python -c '
+from jervis_brain.config import load_config
+from jervis_brain.tracing import TracingConfig
+c = load_config().tracing
+t = TracingConfig(enabled=c.enabled, project=c.project, capture_content=c.capture_content)
+if not c.enabled:
+    print("SKIP off")
+elif not t.api_key:
+    print("WARN enabled but LANGSMITH_API_KEY is not set in ~/.jervis/.env")
+else:
+    content = "with content" if c.capture_content else "no content"
+    print(f"PASS project {c.project}, {content}")
+' 2>/dev/null)"
+if [ -n "$tr" ] && [ "${tr%% *}" != "SKIP" ]; then
+  record "tracing" "${tr%% *}" "${tr#* }"
+fi
+
 # --- macOS privacy permissions ------------------------------------------------
 CHAT_DB="$HOME/Library/Messages/chat.db"
 if [ ! -f "$CHAT_DB" ]; then

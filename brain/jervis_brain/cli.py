@@ -10,7 +10,7 @@ from typing import Any
 
 import click
 
-from . import daemon
+from . import daemon, tracing
 from .agent import Turn
 from .config import load_config
 from .credentials import detect
@@ -40,6 +40,7 @@ async def _with_runtime(fn: Any, *, needs_api_key: bool = False) -> Any:
     finally:
         await runtime.pool.stop()
         runtime.memory.close()
+        tracing.shutdown()
 
 
 def _ask_confirmation(_summary: str) -> str:

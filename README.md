@@ -82,6 +82,39 @@ the world.
 
 Note that everything said either way passes through Telegram's servers.
 
+## Traces
+
+Every turn can be traced in OpenTelemetry's GenAI conventions and sent to LangSmith,
+which ingests OTLP directly:
+
+```yaml
+# ~/.jervis/config.yaml
+tracing:
+  enabled: true
+  project: jervis
+  capture_content: false     # see below
+```
+
+with `LANGSMITH_API_KEY` in `~/.jervis/.env`. A trace looks like:
+
+```
+invoke_agent jervis                 chain   the whole exchange
+  chat claude-sonnet-5              llm     tokens in/out, finish reason
+  execute_tool macos.list_dir       tool    tier, duration, ok/failed
+  chat claude-sonnet-5              llm     the round after the tool results
+```
+
+**`capture_content` is off by default and that is deliberate.** Prompts here hold
+directory listings and message bodies, tool arguments are usually paths from your home
+directory, and Phase 5 adds balances. With it off you still get the shape of every
+turn - which tools ran, in what order, how long each took, token usage, tiers,
+confirmations, and the text of any error - which is what you actually need to debug.
+Turning it on sends the contents to a third party.
+
+Sessions group by conversation, so a Telegram thread and a REPL session appear
+separately. `scripts/doctor.sh` shows whether tracing is on and whether content
+capture is enabled.
+
 ## Layout
 
 ```

@@ -19,7 +19,7 @@ from typing import Any, Protocol
 
 import anthropic
 
-from . import honesty, prompts
+from . import honesty, prompts, tracing
 from .config import Config
 from .events import (
     ConfirmationRequested,
@@ -129,6 +129,7 @@ class Agent:
         # On the Agent rather than per call: a resumed turn has to use the channel of
         # the turn it resumes, and threading it through _Paused buys nothing.
         self.channel = channel
+        self._capture = config.tracing.capture_content
         self._paused: dict[str, _Paused] = {}
 
     # --- public API ------------------------------------------------------------------
@@ -152,9 +153,14 @@ class Agent:
 
         messages = self.memory.history(session_id)
         messages.append({"role": "user", "content": text})
-        return await self._run(
-            session_id, messages, tool_calls=[], rounds_used=0, on_event=on_event
-        )
+        with tracing.turn_span(
+            session_id, text, channel=self.channel.value, capture_content=self._capture
+        ) as span:
+            turn = await self._run(
+                session_id, messages, tool_calls=[], rounds_used=0, on_event=on_event
+            )
+            tracing.record_tool_calls(span, turn.tool_calls)
+            return turn
 
     async def confirm(self, text: str, session_id: str, *, on_event: EventSink = discard) -> Turn:
         """Answer an outstanding confirmation. Anything but a yes aborts."""
@@ -167,9 +173,14 @@ class Agent:
                 reply="That confirmation timed out, so I did nothing. Ask me again if you like.",
                 session_id=session_id,
             )
-        return await self._resume(
-            session_id, paused, approved=is_confirmation(text), on_event=on_event
-        )
+        with tracing.turn_span(
+            session_id, text, channel=self.channel.value, capture_content=self._capture
+        ) as span:
+            turn = await self._resume(
+                session_id, paused, approved=is_confirmation(text), on_event=on_event
+            )
+            tracing.record_tool_calls(span, turn.tool_calls)
+            return turn
 
     # --- the loop ---------------------------------------------------------------------
 
@@ -260,45 +271,63 @@ class Agent:
                         call_id=call_id, tool=qualified, summary=summarise(qualified, args)
                     ),
                 )
+            meta = self.pool.meta_for(qualified)
             started = time.monotonic()
-            try:
-                outcome = await self.guard.execute(
-                    qualified,
-                    args,
-                    self.pool.meta_for(qualified),
-                    self.pool.call,
-                    session_id=session_id,
+            with tracing.tool_span(
+                qualified,
+                args,
+                tier=str((meta or {}).get("x-jervis-tier", "")),
+                capture_content=self._capture,
+            ) as span:
+                try:
+                    outcome = await self.guard.execute(
+                        qualified,
+                        args,
+                        meta,
+                        self.pool.call,
+                        session_id=session_id,
+                        confirmed=confirmed,
+                    )
+                except NeedsConfirmation as needs:
+                    self._paused[session_id] = _Paused(
+                        pending=PendingConfirmation(
+                            tool=needs.tool,
+                            args=needs.tool_args,
+                            summary=needs.summary,
+                            reason="",
+                            created_at=_now(),
+                        ),
+                        messages=messages,
+                        tool_use_id=call_id,
+                        tool_calls=tool_calls,
+                        rounds_used=rounds_used,
+                        results=collected,
+                        remaining=list(blocks[index:]),
+                        performed_action=performed_action,
+                    )
+                    # No ToolFinished here on purpose: the call has not run. It arrives
+                    # once the answer comes back. See events.py.
+                    self._emit(
+                        on_event,
+                        ConfirmationRequested(
+                            call_id=call_id, tool=needs.tool, summary=needs.summary
+                        ),
+                    )
+                    tracing.record_confirmation_requested(span, needs.summary)
+                    return _Round(results=None, performed_action=performed_action)
+                except BlockedByPolicy as blocked:
+                    outcome = ToolOutcome(str(blocked), is_error=True)
+                except Exception as exc:
+                    log.exception("tool %s failed", qualified)
+                    outcome = ToolOutcome(f"{type(exc).__name__}: {exc}", is_error=True)
+
+                tracing.record_outcome(
+                    span,
+                    ok=not outcome.is_error,
+                    detail=outcome.text,
                     confirmed=confirmed,
+                    capture_content=self._capture,
                 )
-            except NeedsConfirmation as needs:
-                self._paused[session_id] = _Paused(
-                    pending=PendingConfirmation(
-                        tool=needs.tool,
-                        args=needs.tool_args,
-                        summary=needs.summary,
-                        reason="",
-                        created_at=_now(),
-                    ),
-                    messages=messages,
-                    tool_use_id=call_id,
-                    tool_calls=tool_calls,
-                    rounds_used=rounds_used,
-                    results=collected,
-                    remaining=list(blocks[index:]),
-                    performed_action=performed_action,
-                )
-                # No ToolFinished here on purpose: the call has not run. It arrives
-                # once the answer comes back. See events.py.
-                self._emit(
-                    on_event,
-                    ConfirmationRequested(call_id=call_id, tool=needs.tool, summary=needs.summary),
-                )
-                return _Round(results=None, performed_action=performed_action)
-            except BlockedByPolicy as blocked:
-                outcome = ToolOutcome(str(blocked), is_error=True)
-            except Exception as exc:
-                log.exception("tool %s failed", qualified)
-                outcome = ToolOutcome(f"{type(exc).__name__}: {exc}", is_error=True)
 
             self._emit(
                 on_event,
@@ -418,24 +447,27 @@ class Agent:
 
         last_error: Exception | None = None
         for attempt in range(MAX_RETRIES):
-            try:
-                async with self.client.messages.stream(
-                    model=self.config.model,
-                    max_tokens=self.config.max_tokens,
-                    system=system,
-                    tools=tools,
-                    messages=messages,
-                    thinking={"type": "adaptive"},
-                    output_config={"effort": self.config.effort},
-                ) as stream:
-                    async for chunk in stream.text_stream:
-                        self._emit(on_event, TextDelta(chunk))
-                    return await stream.get_final_message()
-            except (anthropic.RateLimitError, anthropic.OverloadedError) as exc:
-                last_error = exc
-                delay = BASE_BACKOFF_SECONDS * (2**attempt) + random.uniform(0, 0.5)
-                log.warning("%s; retrying in %.1fs", type(exc).__name__, delay)
-                await asyncio.sleep(delay)
+            with tracing.llm_span(self.config.model, capture_content=self._capture) as span:
+                try:
+                    async with self.client.messages.stream(
+                        model=self.config.model,
+                        max_tokens=self.config.max_tokens,
+                        system=system,
+                        tools=tools,
+                        messages=messages,
+                        thinking={"type": "adaptive"},
+                        output_config={"effort": self.config.effort},
+                    ) as stream:
+                        async for chunk in stream.text_stream:
+                            self._emit(on_event, TextDelta(chunk))
+                        response = await stream.get_final_message()
+                        tracing.record_response(span, response, capture_content=self._capture)
+                        return response
+                except (anthropic.RateLimitError, anthropic.OverloadedError) as exc:
+                    last_error = exc
+                    delay = BASE_BACKOFF_SECONDS * (2**attempt) + random.uniform(0, 0.5)
+                    log.warning("%s; retrying in %.1fs", type(exc).__name__, delay)
+                    await asyncio.sleep(delay)
         raise RuntimeError(
             f"Anthropic API unavailable after {MAX_RETRIES} attempts"
         ) from last_error

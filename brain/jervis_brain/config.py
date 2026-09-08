@@ -76,6 +76,16 @@ class PermissionsConfig:
 
 
 @dataclass(frozen=True)
+class TracingSettings:
+    """See tracing.py. capture_content is off on purpose."""
+
+    enabled: bool = False
+    endpoint: str = "https://api.smith.langchain.com/otel/v1/traces"
+    project: str = "jervis"
+    capture_content: bool = False
+
+
+@dataclass(frozen=True)
 class HttpConfig:
     host: str = "127.0.0.1"
     port: int = 7777
@@ -101,6 +111,7 @@ class Config:
     servers: tuple[ServerConfig, ...] = ()
     permissions: PermissionsConfig = field(default_factory=PermissionsConfig)
     http: HttpConfig = field(default_factory=HttpConfig)
+    tracing: TracingSettings = field(default_factory=TracingSettings)
     paths: Paths = field(default_factory=Paths)
 
     @property
@@ -133,6 +144,7 @@ def load_config(path: str | Path | None = None, *, load_env: bool = True) -> Con
     voice_raw = raw.get("voice") or {}
     perms_raw = raw.get("permissions") or {}
     http_raw = raw.get("http") or {}
+    tracing_raw = raw.get("tracing") or {}
 
     servers = tuple(
         ServerConfig(
@@ -162,6 +174,14 @@ def load_config(path: str | Path | None = None, *, load_env: bool = True) -> Con
         http=HttpConfig(
             host=http_raw.get("host", defaults.http.host),
             port=int(http_raw.get("port", defaults.http.port)),
+        ),
+        tracing=TracingSettings(
+            enabled=bool(tracing_raw.get("enabled", defaults.tracing.enabled)),
+            endpoint=str(tracing_raw.get("endpoint") or defaults.tracing.endpoint),
+            project=str(tracing_raw.get("project") or defaults.tracing.project),
+            capture_content=bool(
+                tracing_raw.get("capture_content", defaults.tracing.capture_content)
+            ),
         ),
         paths=paths,
     )

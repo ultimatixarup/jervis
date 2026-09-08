@@ -52,6 +52,21 @@ telegram:
   poll_timeout: 50
   drop_pending_on_start: true   # ignore anything sent while Jervis was off
 
+# Full traces of every turn, in OpenTelemetry's GenAI conventions, sent to LangSmith.
+# The API key goes in ~/.jervis/.env as LANGSMITH_API_KEY.
+#
+# capture_content is off deliberately. A prompt here holds directory listings and
+# message bodies; a tool argument is usually a path from your home directory; Phase 5
+# adds balances. Turning it on sends all of that to a third party. With it off you
+# still get the shape of every turn - which tools ran, in what order, how long they
+# took, token usage, tiers, confirmations and errors - which is what you want for
+# debugging.
+tracing:
+  enabled: false
+  endpoint: https://api.smith.langchain.com/otel/v1/traces   # eu.api... for the EU region
+  project: jervis
+  capture_content: false
+
 permissions:
   confirm_window_seconds: 60
   extra_destructive_patterns: []
