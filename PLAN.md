@@ -424,6 +424,32 @@ wall-clock. That was written but never run.
 
 ---
 
+## 4d. Addendum — `telegram/` (added after Phase 3)
+
+Not in the original phase plan. PLAN.md §1 said the HTTP endpoint existed "so a phone
+client can be added later"; this is that client, and it needed no change to the brain.
+
+A long-polling Telegram bot, a sibling of `voice/`: it reads a message, POSTs `/ask`,
+and replies. Confirm-tier actions arrive as inline **Yes / No** buttons; a typed "yes"
+works too. One conversation per chat (`telegram:<chat_id>`).
+
+**The allowlist is the security model.** A bot is reachable by anyone who learns its
+handle, and Jervis runs shell commands, so `telegram.allowed_user_ids` fails closed:
+empty means nobody, and the bot refuses to start rather than answer the world. An
+unauthorised message never reaches the brain - there is a test asserting exactly that,
+and another asserting the refusal does not describe what Jervis can do.
+
+Raw httpx rather than a bot framework: six API methods, plain JSON, and the repo
+already talks HTTP directly. Polling rather than webhooks, because a webhook needs a
+public HTTPS endpoint pointed at a laptop behind NAT.
+
+**Known limitation, inherent rather than fixable:** everything said in either
+direction passes through Telegram's servers - file contents, message contents, and
+bank balances once Phase 5 lands. Worth a deliberate decision about which MCP servers
+stay enabled while the bot runs.
+
+---
+
 ## 5. Testing strategy summary
 
 | Layer | Tool | Runs in | Command |

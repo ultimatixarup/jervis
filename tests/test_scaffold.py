@@ -24,6 +24,7 @@ WORKSPACE_MEMBERS = [
     "mcp/bank",
     "mcp/ubereats",
     "mcp/claudecode",
+    "telegram",
 ]
 
 SCRIPTS = [

@@ -17,6 +17,7 @@ members = [
     "jervis-mcp-macos",
     "jervis-mcp-mail",
     "jervis-mcp-ubereats",
+    "jervis-telegram",
     "jervis-voice",
 ]
 
@@ -453,6 +454,21 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "mcp", specifier = ">=1.2" },
+    { name = "pyyaml", specifier = ">=6.0" },
+]
+
+[[package]]
+name = "jervis-telegram"
+version = "0.1.0"
+source = { editable = "telegram" }
+dependencies = [
+    { name = "httpx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+    { name = "pyyaml", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.27" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]
 

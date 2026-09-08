@@ -8,6 +8,7 @@ members = [
     "mcp/bank",
     "mcp/ubereats",
     "mcp/claudecode",
+    "telegram",
 ]
 
 [dependency-groups]
@@ -52,6 +53,7 @@ known-third-party = ["mcp"]
 known-first-party = [
     "jervis_brain",
     "jervis_voice",
+    "jervis_telegram",
     "jervis_mcp_macos",
     "jervis_mcp_imessage",
     "jervis_mcp_mail",
@@ -64,7 +66,7 @@ known-first-party = [
 python_version = "3.12"
 # Without this, brain/jervis_brain/x.py resolves as both `brain.jervis_brain.x` and the
 # installed `jervis_brain.x`, and mypy refuses to check either.
-mypy_path = ["brain", "tests/fixtures", "tests/e2e", "voice", "mcp/macos", "mcp/imessage", "mcp/mail", "mcp/bank", "mcp/ubereats", "mcp/claudecode"]
+mypy_path = ["brain", "tests/fixtures", "tests/e2e", "voice", "telegram", "mcp/macos", "mcp/imessage", "mcp/mail", "mcp/bank", "mcp/ubereats", "mcp/claudecode"]
 strict = true
 warn_unreachable = true
 namespace_packages = true
@@ -82,7 +84,7 @@ module = [
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-testpaths = ["brain", "voice", "mcp", "tests"]
+testpaths = ["brain", "voice", "telegram", "mcp", "tests"]
 # Shared test doubles live here so both brain/tests and tests/e2e can import them.
 pythonpath = ["tests/fixtures", "tests/e2e"]
 addopts = "-q --strict-markers"

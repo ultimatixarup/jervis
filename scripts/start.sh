@@ -3,6 +3,7 @@
 #
 #   start.sh            typed conversation (the usual way)
 #   start.sh --serve    the HTTP brain in the foreground, for another client
+#   start.sh --telegram the brain plus the Telegram bot
 #   start.sh --voice    the brain plus the listening loop  (Phase 3, known choppy)
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 cd "$REPO_ROOT"
@@ -10,9 +11,10 @@ cd "$REPO_ROOT"
 MODE="repl"
 case "${1:-}" in
   --voice) MODE="voice"; shift ;;
+  --telegram) MODE="telegram"; shift ;;
   --serve) MODE="serve"; shift ;;
   --repl)  MODE="repl";  shift ;;
-  -h|--help) sed -n '2,6p' "$0" | sed 's/^#\{1,\} \{0,1\}//'; exit 0 ;;
+  -h|--help) sed -n '2,7p' "$0" | sed 's/^#\{1,\} \{0,1\}//'; exit 0 ;;
 esac
 
 if ! uv run python -c 'import sys; from jervis_brain.credentials import detect; sys.exit(0 if detect().ok else 1)'; then
@@ -32,7 +34,7 @@ if [ "$MODE" = "serve" ]; then
   exec uv run jervis serve "$@"
 fi
 
-# --- voice: a background brain, then the listening loop -----------------------------
+# --- voice and telegram: a background brain, then the client ------------------------
 BRAIN_LOG="$JERVIS_HOME/logs/brain.log"
 PIDFILE="$JERVIS_HOME/jervis.pid"
 
@@ -62,5 +64,10 @@ if ! kill -0 "$BRAIN_PID" 2>/dev/null; then
 $(tail -20 "$BRAIN_LOG")"
 fi
 
-info "starting the listening loop"
-uv run jervis-voice "$@"
+if [ "$MODE" = "telegram" ]; then
+  info "starting the Telegram bot"
+  uv run jervis-telegram "$@"
+else
+  info "starting the listening loop"
+  uv run jervis-voice "$@"
+fi

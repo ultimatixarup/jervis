@@ -93,6 +93,24 @@ else
   record "claude code" WARN "not on PATH; disable the claudecode server or install it"
 fi
 
+# --- Telegram (optional) ------------------------------------------------------
+tg="$(cd "$REPO_ROOT" && uv run python -c '
+from jervis_telegram.settings import load, load_env
+load_env()
+s = load()
+if not s.token and not s.allowed_user_ids:
+    print("SKIP not set up")
+elif not s.token:
+    print("WARN allowlist set but no TELEGRAM_BOT_TOKEN in ~/.jervis/.env")
+elif not s.allowed_user_ids:
+    print("WARN token set but telegram.allowed_user_ids is empty, so it answers nobody")
+else:
+    print(f"PASS token set, {len(s.allowed_user_ids)} account(s) allowed")
+' 2>/dev/null)"
+if [ -n "$tg" ] && [ "${tg%% *}" != "SKIP" ]; then
+  record "telegram" "${tg%% *}" "${tg#* }"
+fi
+
 # --- macOS privacy permissions ------------------------------------------------
 CHAT_DB="$HOME/Library/Messages/chat.db"
 if [ ! -f "$CHAT_DB" ]; then

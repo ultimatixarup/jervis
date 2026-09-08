@@ -36,6 +36,7 @@ commands; up-arrow recalls what you typed last time.
 uv run jervis ask "what's on my desktop"    # one question, no prompt
 uv run jervis status                        # what it can reach, what it last did
 uv run jervis audit                         # every tool call, most recent last
+scripts/start.sh --telegram                 # talk to it from Telegram
 scripts/start.sh --serve                    # the HTTP endpoint on localhost:7777
 scripts/start.sh --voice                    # the microphone (choppy; PLAN.md §4c)
 ```
@@ -68,11 +69,25 @@ at it later.
 The typed REPL does *not* go through HTTP — it runs the agent in-process, so it starts
 one set of MCP servers and a confirmation stays answerable within the session.
 
+## From your phone
+
+`scripts/start.sh --telegram` puts Jervis behind a Telegram bot, so you can ask it
+things from anywhere. Confirm-tier actions arrive as **Yes / No** buttons.
+
+Setup is two steps you have to do yourself — a bot token from @BotFather, and your own
+numeric id in `telegram.allowed_user_ids`. `telegram/TESTING.md` walks through both.
+The allowlist is the security model: the bot is reachable by anyone who finds its
+handle, so an empty list means nobody, and Jervis refuses to start rather than answer
+the world.
+
+Note that everything said either way passes through Telegram's servers.
+
 ## Layout
 
 ```
 brain/    Claude tool-use loop, permission guard, memory, HTTP endpoint
 voice/    wake word, speech-to-text, text-to-speech, the listening loop
+telegram/ the Telegram bot, a client of the HTTP endpoint
 mcp/      one MCP server per capability: macos, claudecode, imessage, mail,
           bank, ubereats
 daemon/   launchd agent (Phase 7)

@@ -43,6 +43,15 @@ claudecode:
   # e.g. ["Bash(git status:*)", "Bash(git diff:*)", "Bash(npm test:*)"]
   extra_allowed_tools: []
 
+# Talk to Jervis from Telegram. The allowlist is the whole security model: a bot is
+# reachable by anyone who learns its @handle, and Jervis runs shell commands, so an
+# empty list means *nobody*. Message @userinfobot in Telegram to get your numeric id.
+# The bot token itself goes in ~/.jervis/.env as TELEGRAM_BOT_TOKEN.
+telegram:
+  allowed_user_ids: []          # e.g. [123456789] - yours, and nobody else's
+  poll_timeout: 50
+  drop_pending_on_start: true   # ignore anything sent while Jervis was off
+
 permissions:
   confirm_window_seconds: 60
   extra_destructive_patterns: []
