@@ -300,15 +300,18 @@ def test_eof_at_a_confirmation_means_no(monkeypatch: pytest.MonkeyPatch, config:
 
 
 @pytest.mark.usefixtures("api_key")
-def test_the_pending_action_is_shown_before_the_prompt(
+def test_the_pending_action_is_shown_once_before_the_prompt(
     monkeypatch: pytest.MonkeyPatch, config: Config
 ) -> None:
+    """The agent's reply already reads the action back, so the CLI must not repeat it -
+    the same summary printed twice reads as two different questions."""
+    summary = "macos.move_to_trash: ~/Desktop/report.pdf"
     runtime = make_runtime(
         [
             Turn(
-                reply="Shall I?",
+                reply=f"{summary}. Shall I go ahead?",
                 session_id="cli",
-                pending_confirmation="macos.move_to_trash: ~/Desktop/report.pdf",
+                pending_confirmation=summary,
             ),
             Turn(reply="Left alone.", session_id="cli"),
         ],
@@ -316,7 +319,8 @@ def test_the_pending_action_is_shown_before_the_prompt(
     )
     install(monkeypatch, runtime)
     result = CliRunner().invoke(cli_module.cli, ["ask", "bin it"], input="no\n")
-    assert "macos.move_to_trash: ~/Desktop/report.pdf" in result.output
+    assert result.output.count(summary) == 1
+    assert result.output.index(summary) < result.output.index("[yes / no]")
 
 
 # --- streaming ----------------------------------------------------------------------

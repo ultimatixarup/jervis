@@ -87,6 +87,15 @@ def test_the_text_persona_allows_structure() -> None:
     assert "No headings, no bold, no emoji." in text_block
 
 
+def test_the_model_is_told_not_to_pre_ask_for_confirmation() -> None:
+    """It used to read "read the summary back and wait" as an instruction to itself,
+    so it asked in prose and the guard then asked again - the same question twice."""
+    for channel in prompts.Channel:
+        block = prompts.stable_block(channel=channel)
+        assert "confirmed by the" in block
+        assert "Never ask permission first" in block
+
+
 def test_the_channels_differ_only_in_manner() -> None:
     voice = prompts.stable_block(channel=prompts.Channel.VOICE)
     text_block = prompts.stable_block(channel=prompts.Channel.TEXT)
@@ -95,7 +104,7 @@ def test_the_channels_differ_only_in_manner() -> None:
     for rule in (
         "Never say an action is done unless a tool result says it is done",
         "blocked outright",
-        "Read the summary back and wait",
+        "confirmed by the\n  system, not by you",
     ):
         assert rule in voice and rule in text_block
 

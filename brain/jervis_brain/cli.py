@@ -40,9 +40,12 @@ async def _with_runtime(fn: Any, *, needs_api_key: bool = False) -> Any:
         runtime.memory.close()
 
 
-def _ask_confirmation(summary: str) -> str:
-    """Ask about a pending action. EOF or Ctrl-C means no, not a traceback."""
-    click.secho(f"  {summary}", fg="yellow")
+def _ask_confirmation(_summary: str) -> str:
+    """Ask about a pending action. EOF or Ctrl-C means no, not a traceback.
+
+    The summary is not reprinted: the paused turn's reply already read it back, and
+    saying it twice makes the prompt look like a second, different question.
+    """
     try:
         return click.prompt(f"  [{CONFIRM_HELP}]", default="no", show_default=False)
     except (EOFError, click.Abort):

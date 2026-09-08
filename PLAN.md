@@ -394,6 +394,36 @@ Known limits
 
 ---
 
+## 4c. Addendum — voice is parked (after Phase 3)
+
+Phase 3 works: the wake word fires at 0.93 from across a room, transcription takes
+346ms, and it answered a real question out loud. In daily use it is choppy enough not
+to be worth it, so **typed conversation is the front door** and voice sits behind
+`scripts/start.sh --voice`. Nothing is deleted and the voice suite still runs.
+
+What was measured before parking it, so it need not be rediscovered:
+- wake word: 0.93-0.96 on real speech through speakers, no false fires observed
+- transcription: 346ms for a short utterance, but confidence as low as 0.36 on
+  "what's the date" - barely over the 0.35 discard threshold
+- local pipeline: ~356ms of the 3s budget; Whisper loads once at startup (2.2s)
+
+Leading suspects for the choppiness, in order:
+1. **A stale microphone backlog.** `MicSource` queues 200 frames (4s) and drops the
+   rest. Nothing drains that queue while the brain is thinking, so the next listen
+   starts several seconds behind real time. Draining on re-entry to LISTENING is the
+   obvious first fix.
+2. **Self-triggering barge-in.** `_speak_and_listen` polls the microphone while `say`
+   is talking, and `say` reaches the microphone. A false wake fires STOP_SPEAKING
+   mid-sentence, which would read exactly as "choppy".
+3. Marginal transcription confidence, which a larger Whisper model would improve at
+   some latency cost.
+
+The diagnostic to run first is a real-time factor measurement: read the mic at loop
+speed for ten seconds and compare `MicSource.dropped_frames` and audio-seconds against
+wall-clock. That was written but never run.
+
+---
+
 ## 5. Testing strategy summary
 
 | Layer | Tool | Runs in | Command |

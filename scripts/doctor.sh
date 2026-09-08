@@ -37,7 +37,7 @@ else
   record "python 3.12" FAIL "uv run failed: ${pyver%%$'\n'*}"
 fi
 
-for bin in ffmpeg sqlite3 osascript; do
+for bin in sqlite3 osascript; do
   if command -v "$bin" >/dev/null 2>&1; then
     record "$bin" PASS "$(command -v "$bin")"
   else
@@ -45,10 +45,19 @@ for bin in ffmpeg sqlite3 osascript; do
   fi
 done
 
+# ffmpeg, portaudio and a microphone are needed only by the voice loop (Phase 3), so
+# they WARN rather than FAIL - otherwise doctor.sh exits 1 on a perfectly good
+# typed-only setup, which is the same as having no doctor at all.
+if command -v ffmpeg >/dev/null 2>&1; then
+  record "ffmpeg" PASS "$(command -v ffmpeg)"
+else
+  record "ffmpeg" WARN "not on PATH; needed for voice only"
+fi
+
 if brew list --versions portaudio >/dev/null 2>&1; then
   record "portaudio" PASS "$(brew list --versions portaudio)"
 else
-  record "portaudio" FAIL "brew install portaudio"
+  record "portaudio" WARN "brew install portaudio; needed for voice only"
 fi
 
 # --- state dir & secrets ------------------------------------------------------
@@ -74,7 +83,7 @@ fi
 if system_profiler SPAudioDataType 2>/dev/null | grep -q 'Input Channels'; then
   record "microphone" PASS "input device present"
 else
-  record "microphone" FAIL "no audio input device found"
+  record "microphone" WARN "no audio input device; needed for voice only"
 fi
 
 # --- Claude Code --------------------------------------------------------------

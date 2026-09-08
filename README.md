@@ -1,9 +1,10 @@
 # Jervis
 
-An always-on, voice-driven personal agent for macOS. Claude is the brain; MCP servers are
+A personal agent for macOS. You type; it uses your Mac. Claude is the brain; MCP servers are
 the hands. See `PLAN.md` for the full design and phase plan.
 
-Status: **Phase 3**. Jervis listens and talks back.
+Status: **Phase 3**. Typed conversation is the way in. Voice exists and works,
+but is choppy in practice - see PLAN.md §4c.
 
 ## Quickstart
 
@@ -22,29 +23,22 @@ ant auth login                        # browser OAuth; nothing to paste, no key 
 ```
 
 `scripts/doctor.sh` reports which source it found. Note: an `ant` profile and Claude
-Code's own login can conflict - keep one. Then talk to it:
+Code's own login can conflict - keep one. Then:
 
 ```bash
-scripts/start.sh              # brain + microphone; say "Hey Jarvis, ..."
+scripts/start.sh              # a prompt; ask it things
 ```
 
-The wake word is **"Hey Jarvis"** until a custom model is trained - see
-`scripts/train-wakeword.sh`. Check the audio stack on its own with
-`scripts/test-voice.sh`.
-
-Or type instead of talking:
+It shows each tool call as it runs and streams the answer back. `/help` lists the
+commands; up-arrow recalls what you typed last time.
 
 ```bash
-uv run jervis repl            # conversation; Ctrl-D to leave
-uv run jervis ask "what's on my desktop"
-uv run jervis status          # what it can reach, and what it last did
-uv run jervis audit           # every tool call, most recent last
-uv run jervis serve           # the HTTP endpoint on localhost:7777
+uv run jervis ask "what's on my desktop"    # one question, no prompt
+uv run jervis status                        # what it can reach, what it last did
+uv run jervis audit                         # every tool call, most recent last
+scripts/start.sh --serve                    # the HTTP endpoint on localhost:7777
+scripts/start.sh --voice                    # the microphone (choppy; PLAN.md §4c)
 ```
-
-
-
-When you're happy with it, `daemon/install.sh` (Phase 7) runs it at login forever.
 
 ## What it will be allowed to do
 
@@ -52,7 +46,7 @@ When you're happy with it, `daemon/install.sh` (Phase 7) runs it at login foreve
 |------|-----------|
 | `read` | runs silently |
 | `write` | runs, then Jervis says what it did |
-| `confirm` | reads back a one-line summary and waits for a spoken "yes" |
+| `confirm` | reads back a one-line summary and waits for a "yes" |
 | `blocked` | refused — the tool does not exist in the toolset |
 
 Moving money, formatting disks, changing security settings, and touching `~/.ssh` or the
@@ -67,9 +61,12 @@ Every tool call is appended to `~/.jervis/audit.jsonl` — read it with `jervis 
 
 ## Typed endpoint
 
-`jervis serve` exposes `POST /ask`, `POST /confirm` and `GET /health` on
-`localhost:7777`. The voice loop is just a client of these, so the brain can be
-driven — and tested — without a microphone.
+`scripts/start.sh --serve` exposes `POST /ask`, `POST /confirm` and `GET /health` on
+`localhost:7777`. The voice loop is a client of these; so is anything else you point
+at it later.
+
+The typed REPL does *not* go through HTTP — it runs the agent in-process, so it starts
+one set of MCP servers and a confirmation stays answerable within the session.
 
 ## Layout
 

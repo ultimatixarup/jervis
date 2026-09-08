@@ -55,6 +55,16 @@ event loop that later uses them, or calls deadlock silently rather than erroring
 is why `create_app` takes a `runtime_factory` awaited inside the lifespan, and why the
 voice tests use it instead of building a pool up front.
 
+**Streamed text is not the reply.** `Agent` emits `TextDelta`s as they arrive, but
+`Turn.reply` is only the last message and `honesty.enforce` can rewrite it afterwards -
+it depends on whether an action ran, which is not known until the round ends. A renderer
+treats deltas as progress and prints `Turn.reply` only when it differs. Do not try to
+move the honesty check onto the stream; that would gut the safety property.
+
+**The persona is per channel and the stable block is the cache prefix.** `prompts.PERSONA`
+holds two whole strings, not pieces assembled per call, because a block that varies
+between turns can never be cached. If you edit one channel, leave the other alone.
+
 ## Test file naming
 
 Test files carry their member as a prefix — `test_macos_safety.py`,
