@@ -10,6 +10,7 @@ import httpx
 
 from .api import TelegramAPI, TelegramError
 from .bot import Bot
+from .logging_setup import install as install_redaction
 from .settings import NotConfigured, load, load_env
 
 log = logging.getLogger("jervis.telegram")
@@ -28,6 +29,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     load_env()
     settings = load()
+
+    # Before any API call: the URL carries the token and httpx logs URLs.
+    install_redaction(settings.token)
 
     try:
         settings.require_usable()
