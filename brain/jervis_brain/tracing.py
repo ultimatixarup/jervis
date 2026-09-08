@@ -41,6 +41,12 @@ LANGSMITH_ENDPOINT = "https://api.smith.langchain.com/otel/v1/traces"
 LANGSMITH_EU_ENDPOINT = "https://eu.api.smith.langchain.com/otel/v1/traces"
 
 SYSTEM = "anthropic"
+# `langsmith.trace.session_id` is NOT a conversation thread: in LangSmith a "tracer
+# session" is a *project*, so that attribute wants an existing project UUID and returns
+# 404 "tracer session not found" for anything else. The project comes from the
+# Langsmith-Project header instead. Threads are grouped from metadata, which is where
+# the conversation id belongs.
+THREAD_KEYS = ("session_id", "thread_id", "conversation_id")
 AGENT_NAME = "jervis"
 SERVICE_NAME = "jervis-brain"
 
@@ -136,7 +142,10 @@ def turn_span(
     with tracer().start_as_current_span(f"invoke_agent {AGENT_NAME}", kind=SpanKind.CLIENT) as span:
         _set(span, "langsmith.span.kind", "chain")
         _set(span, "langsmith.trace.name", f"{channel} turn")
-        _set(span, "langsmith.trace.session_id", session_id)
+        # All three keys, because LangSmith's Threads view accepts any of them and
+        # which one it prefers has changed before.
+        for key in THREAD_KEYS:
+            _set(span, f"langsmith.metadata.{key}", session_id)
         _set(span, "gen_ai.operation.name", "invoke_agent")
         _set(span, "gen_ai.agent.name", AGENT_NAME)
         _set(span, "langsmith.metadata.channel", channel)

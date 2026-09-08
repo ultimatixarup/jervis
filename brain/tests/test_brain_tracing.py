@@ -45,8 +45,24 @@ def test_the_turn_span_is_a_chain_with_a_session(spans: InMemorySpanExporter) ->
         pass
     a = attrs(spans, "invoke_agent")
     assert a["langsmith.span.kind"] == "chain"
-    assert a["langsmith.trace.session_id"] == "telegram:42"
     assert a["gen_ai.operation.name"] == "invoke_agent"
+    assert a["langsmith.metadata.channel"] == "text"
+
+
+def test_the_conversation_is_grouped_by_metadata_not_trace_session_id(
+    spans: InMemorySpanExporter,
+) -> None:
+    """`langsmith.trace.session_id` means the *project* - a "tracer session" - so a
+    conversation id there is a 404 "tracer session not found", and a non-UUID is a 422.
+    A local OTLP receiver accepts either happily; only the real endpoint rejects them.
+    Threads are grouped from metadata instead.
+    """
+    with turn_span("telegram:42", "hi", channel="text"):
+        pass
+    a = attrs(spans, "invoke_agent")
+    assert "langsmith.trace.session_id" not in a
+    for key in ("session_id", "thread_id", "conversation_id"):
+        assert a[f"langsmith.metadata.{key}"] == "telegram:42"
 
 
 def test_the_llm_span_carries_model_and_usage(spans: InMemorySpanExporter) -> None:
