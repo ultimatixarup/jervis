@@ -14,7 +14,7 @@ from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
 
 from .config import Config, ServerConfig
-from .permissions import ToolOutcome
+from .permissions import TIER_KEY, ToolOutcome
 
 # Anthropic tool names must match ^[a-zA-Z0-9_-]{1,128}$ - a dot is rejected. PLAN.md
 # §4 Phase 2 writes qualified names as `macos.run_shell`, which stays the canonical
@@ -54,6 +54,24 @@ class RemoteTool:
             "description": self.description,
             "input_schema": self.input_schema,
         }
+
+
+def _tiered_meta(meta: dict[str, Any], tool_name: str, server: ServerConfig) -> dict[str, Any]:
+    """Fill in a tier the server did not declare, from config.
+
+    Applied here, at registration, so the permission guard stays unaware that some
+    servers tier themselves and some are tiered by Arup - there is exactly one place a
+    tier can come from as far as the guard is concerned.
+
+    A tier the server declares itself always wins: config may only supply a missing
+    one, never soften one Jervis's own servers set.
+    """
+    if meta.get(TIER_KEY):
+        return meta
+    configured = server.tier_for(tool_name)
+    if configured:
+        meta[TIER_KEY] = configured
+    return meta
 
 
 class ServerStartupError(RuntimeError):
@@ -145,7 +163,11 @@ class MCPClientPool:
             self._ready.set()
 
     async def _start_one(self, stack: AsyncExitStack, server: ServerConfig) -> None:
-        params = StdioServerParameters(command=self.python, args=["-m", server.import_module])
+        if server.is_external:
+            # A third-party server: whatever command the config names, e.g. npx.
+            params = StdioServerParameters(command=server.command, args=list(server.args))
+        else:
+            params = StdioServerParameters(command=self.python, args=["-m", server.import_module])
         read, write = await stack.enter_async_context(stdio_client(params))
         session = await stack.enter_async_context(ClientSession(read, write))
         await session.initialize()
@@ -158,7 +180,7 @@ class MCPClientPool:
                 name=tool.name,
                 description=tool.description or tool.name,
                 input_schema=tool.input_schema,
-                meta=dict(tool.meta or {}),
+                meta=_tiered_meta(dict(tool.meta or {}), tool.name, server),
             )
             self._tools[remote.qualified] = remote
 

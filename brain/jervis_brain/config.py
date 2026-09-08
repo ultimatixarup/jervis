@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -59,14 +60,39 @@ class VoiceConfig:
 
 @dataclass(frozen=True)
 class ServerConfig:
+    """One MCP server: either one of Jervis's own, or a third-party one.
+
+    Jervis's own servers declare a tier per tool. Third-party ones do not and cannot -
+    `x-jervis-tier` is this project's invention - so the guard would block every one of
+    their tools. `tool_tiers` supplies those tiers from config, where Arup decides them
+    rather than the server author.
+
+    Anything not listed stays blocked unless `default_tier` says otherwise. That is
+    deliberate: a server installed with `npx -y` silently updates to the latest version
+    on every launch, so a tool that appears without warning must not simply run.
+    """
+
     name: str
     enabled: bool = True
     module: str = ""
     env: str | None = None
+    # For third-party servers: how to launch them, e.g. npx -y @scope/package.
+    command: str = ""
+    args: tuple[str, ...] = ()
+    tool_tiers: Mapping[str, str] = field(default_factory=dict)
+    default_tier: str = ""
 
     @property
     def import_module(self) -> str:
         return self.module or f"jervis_mcp_{self.name}"
+
+    @property
+    def is_external(self) -> bool:
+        return bool(self.command)
+
+    def tier_for(self, tool_name: str) -> str:
+        """The configured tier for a tool the server did not tier itself."""
+        return self.tool_tiers.get(tool_name, self.default_tier)
 
 
 @dataclass(frozen=True)
@@ -152,6 +178,10 @@ def load_config(path: str | Path | None = None, *, load_env: bool = True) -> Con
             enabled=bool((spec or {}).get("enabled", True)),
             module=(spec or {}).get("module", ""),
             env=(spec or {}).get("env"),
+            command=str((spec or {}).get("command") or ""),
+            args=tuple((spec or {}).get("args") or ()),
+            tool_tiers=dict((spec or {}).get("tool_tiers") or {}),
+            default_tier=str((spec or {}).get("default_tier") or ""),
         )
         for name, spec in (raw.get("servers") or {}).items()
     )

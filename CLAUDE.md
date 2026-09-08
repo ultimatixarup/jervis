@@ -65,6 +65,12 @@ move the honesty check onto the stream; that would gut the safety property.
 holds two whole strings, not pieces assembled per call, because a block that varies
 between turns can never be cached. If you edit one channel, leave the other alone.
 
+**Third-party MCP servers are tiered from config, not by their author.** They cannot
+declare `x-jervis-tier`, so `servers.<name>.tool_tiers` supplies it and anything
+unlisted stays blocked - `npx -y` updates silently, so a new tool must not just start
+working. Config may only fill in a missing tier, never soften a declared one; there is
+a test for that. Pin third-party versions in `args`.
+
 ## Test file naming
 
 Test files carry their member as a prefix — `test_macos_safety.py`,

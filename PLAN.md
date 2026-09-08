@@ -315,7 +315,23 @@ Tests
 Acceptance
 - Voice: "what's my checking balance" returns sandbox balance; no write path exists.
 
-### Phase 6 — Uber Eats (1–2 days, flaky by nature)
+### Phase 6 — Uber Eats  — **superseded by a third-party server**
+
+Not built as written. `@striderlabs/mcp-ubereats` does the same job with the same
+technique (Playwright against a persisted browser session), and adding it took an hour
+rather than two days. It is configured in `config.example.yaml`, disabled by default,
+with tiers assigned in config because a third-party server cannot declare
+`x-jervis-tier` itself. See `mcp/ubereats/TESTING.md`.
+
+**One property of the original design is missing and worth restoring:** `place_order`
+was to re-validate the total to within 10% of a fresh preview. The third-party
+`checkout` takes only a `confirm` boolean, so what Jervis reads back is the instruction
+rather than the final total, and the price can move between the yes and the charge. A
+thin wrapper calling `checkout(confirm=false)` first would close that.
+
+The original plan follows, for reference if the third-party server is ever dropped.
+
+### Phase 6 (original plan) — Uber Eats (1–2 days, flaky by nature)
 
 Tools
 - `list_favorites()` → `read`: reads `~/.jervis/ubereats-favorites.yaml` (restaurant, item, options, expected price).

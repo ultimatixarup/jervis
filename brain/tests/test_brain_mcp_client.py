@@ -103,3 +103,63 @@ async def test_remote_tool_naming() -> None:
     tool = RemoteTool(server="mail", name="send_mail", description="d", input_schema={})
     assert tool.qualified == "mail.send_mail"
     assert tool.wire_name == "mail__send_mail"
+
+
+# --- third-party servers ---------------------------------------------------------------
+#
+# A server Jervis did not write cannot declare x-jervis-tier - that key is this
+# project's invention - so without a configured tier the guard blocks every one of its
+# tools. These pin how config supplies them, and how far it is allowed to go.
+
+from jervis_brain.mcp_client import _tiered_meta  # noqa: E402
+from jervis_brain.permissions import TIER_KEY, Tier, classify  # noqa: E402
+
+
+def external(**kwargs: object) -> ServerConfig:
+    return ServerConfig(
+        name="ubereats",
+        command="npx",
+        args=("-y", "@striderlabs/mcp-ubereats@0.2.1"),
+        **kwargs,  # type: ignore[arg-type]
+    )
+
+
+async def test_a_configured_tier_fills_in_a_missing_one() -> None:
+    server = external(tool_tiers={"ubereats_search": "read"})
+    meta = _tiered_meta({}, "ubereats_search", server)
+    assert meta[TIER_KEY] == "read"
+    assert classify("ubereats.ubereats_search", {}, meta).tier is Tier.READ
+
+
+async def test_an_unlisted_tool_stays_blocked() -> None:
+    """`npx -y` silently updates to the latest version on every launch, so a tool that
+    appears without warning must not simply start running."""
+    server = external(tool_tiers={"ubereats_search": "read"})
+    meta = _tiered_meta({}, "ubereats_something_new", server)
+    assert TIER_KEY not in meta
+    assert classify("ubereats.ubereats_something_new", {}, meta).blocked
+
+
+async def test_a_default_tier_covers_the_unlisted_when_asked_for() -> None:
+    server = external(tool_tiers={"ubereats_search": "read"}, default_tier="confirm")
+    meta = _tiered_meta({}, "ubereats_something_new", server)
+    assert classify("ubereats.ubereats_something_new", {}, meta).tier is Tier.CONFIRM
+
+
+async def test_config_can_never_soften_a_tier_the_server_declared() -> None:
+    """Otherwise a config edit could quietly demote macos.move_to_trash to `read`."""
+    server = ServerConfig(name="macos", tool_tiers={"move_to_trash": "read"})
+    meta = _tiered_meta({TIER_KEY: "confirm"}, "move_to_trash", server)
+    assert meta[TIER_KEY] == "confirm"
+
+
+async def test_our_own_servers_are_untouched_by_the_mechanism() -> None:
+    async with MCPClientPool((ServerConfig(name="macos"),), python=sys.executable) as pool:
+        assert pool.meta_for("macos.move_to_trash") == {"x-jervis-tier": "confirm"}
+
+
+async def test_an_external_server_is_launched_with_its_own_command() -> None:
+    server = external()
+    assert server.is_external
+    assert server.command == "npx"
+    assert server.args[0] == "-y"

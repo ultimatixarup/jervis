@@ -26,7 +26,30 @@ servers:
   imessage: { enabled: false }                # Phase 4
   mail:     { enabled: false }                # Phase 4
   bank:     { enabled: false, env: sandbox }  # Phase 5
-  ubereats: { enabled: false }                # Phase 6
+  # Third-party server (@striderlabs/mcp-ubereats), so it cannot declare Jervis tiers -
+  # they are set here, by you, not by its author. Anything not listed stays blocked,
+  # which matters because `npx -y` pulls the latest version on every launch.
+  #
+  # Read telegram/TESTING.md's warnings before enabling: ubereats_checkout spends real
+  # money on the card saved to your Uber Eats account, and Jervis is reachable from
+  # Telegram. The version is pinned deliberately - drop the @0.2.1 and you are running
+  # whatever was published most recently.
+  ubereats:
+    enabled: false
+    command: npx
+    args: ["-y", "@striderlabs/mcp-ubereats@0.2.1"]
+    tool_tiers:
+      ubereats_status: read
+      ubereats_search: read
+      ubereats_get_restaurant: read
+      ubereats_view_cart: read
+      ubereats_track_order: read
+      ubereats_login: write
+      ubereats_logout: write
+      ubereats_set_address: write
+      ubereats_add_to_cart: write
+      ubereats_clear_cart: write
+      ubereats_checkout: confirm      # spends money; Jervis reads it back and waits
   claudecode: { enabled: true }               # delegate coding work to Claude Code
 
 # Claude Code can read and edit whatever it is pointed at, so these limits live here
