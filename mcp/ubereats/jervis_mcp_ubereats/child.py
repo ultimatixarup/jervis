@@ -83,6 +83,18 @@ class Child:
             self._ready.set()
             self._session = None
 
+    async def restart(self) -> None:
+        """Bring the child back up.
+
+        The upstream server loads cookies when it creates its browser context, so a
+        session written after it started is invisible to it until it restarts.
+        """
+        await self.stop()
+        self._ready = asyncio.Event()
+        self._stop = asyncio.Event()
+        self.error = ""
+        await self.start()
+
     async def stop(self) -> None:
         self._stop.set()
         task, self._task = self._task, None

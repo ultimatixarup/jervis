@@ -39,6 +39,14 @@ else
   say "  skipping Playwright (not a dependency yet - Phase 6)"
 fi
 
+# The Uber Eats sign-in helper. Only needed if that server is enabled, and skipped
+# quietly when node is absent, since it is optional.
+if command -v npm >/dev/null 2>&1 && [ -d "$REPO_ROOT/mcp/ubereats/node" ]; then
+  info "installing the Uber Eats sign-in helper"
+  (cd "$REPO_ROOT/mcp/ubereats/node" && npm install --silent) || \
+    warn "could not install it; `cd mcp/ubereats/node && npm install` by hand if you enable ubereats"
+fi
+
 # --- State directory ----------------------------------------------------------
 info "Preparing $JERVIS_HOME"
 mkdir -p "$JERVIS_HOME"/{logs,chrome-profile,receipts}

@@ -22,7 +22,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from . import __version__
+from . import __version__, signin
 from .child import Child, ChildUnavailable
 from .pricing import DEFAULT_TOLERANCE, Drift, UnreadableTotal, parse_total
 
@@ -72,18 +72,48 @@ async def _call(name: str, **args: Any) -> str:
 # --- browsing: straight through --------------------------------------------------------
 
 
+# When the session on disk is newer than the running child, the child is still using
+# the old one. Tracked so `status` can reload rather than reporting a stale answer.
+_child_started_at: float = 0.0
+
+
 @mcp.tool(meta=READ, annotations=READ_ONLY, description="Whether you are signed in to Uber Eats.")
 async def status() -> str:
+    global _child_started_at
+    session = signin.read_session()
+    if session.looks_signed_in and session.modified_at > _child_started_at:
+        # Signed in since the child started: it is holding the previous session.
+        try:
+            await child.restart()
+            _child_started_at = session.modified_at
+        except ChildUnavailable as exc:
+            raise ToolError(str(exc)) from exc
     return await _call("ubereats_status")
 
 
-@mcp.tool(meta=WRITE, description="Start an Uber Eats sign-in. Returns a URL to open.")
-async def login() -> str:
-    return await _call("ubereats_login")
+@mcp.tool(
+    meta=WRITE,
+    description=(
+        "Open a browser window to sign in to Uber Eats. Returns straight away - tell "
+        "Arup to sign in in the window, then check status. Do not ask for a password."
+    ),
+)
+async def sign_in(timeout_seconds: int = signin.DEFAULT_TIMEOUT_SECONDS) -> str:
+    try:
+        signin.start(timeout_seconds)
+    except signin.SignInUnavailable as exc:
+        raise ToolError(str(exc)) from exc
+    minutes = max(1, timeout_seconds // 60)
+    return (
+        "A browser window is opening at the Uber Eats sign-in page. Sign in there "
+        f"yourself - I never see your password. It waits about {minutes} minute(s), then "
+        "closes and keeps the session. Say when you're done and I'll check."
+    )
 
 
-@mcp.tool(meta=WRITE, description="Sign out of Uber Eats.")
+@mcp.tool(meta=WRITE, description="Sign out of Uber Eats and forget the session.")
 async def logout() -> str:
+    _previews.clear()
     return await _call("ubereats_logout")
 
 

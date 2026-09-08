@@ -33,10 +33,11 @@ fetches whatever was published most recently.
 
 ## Enabling it
 
-Download the browser it drives, once:
+Two one-time steps:
 
 ```bash
-npx patchright install chromium
+npx patchright install chromium          # ~150MB, the browser it drives
+cd mcp/ubereats/node && npm install      # the sign-in helper
 ```
 
 Then:
@@ -47,11 +48,34 @@ servers:
   ubereats: { enabled: true }
 ```
 
-then `launchctl kickstart -k gui/$UID/com.arup.jervis`, and log in once:
+then `launchctl kickstart -k gui/$UID/com.arup.jervis`, and sign in once:
 
-> "log in to Uber Eats"
+> "sign in to Uber Eats"
 
-It returns a URL; sign in there and the session persists.
+**A real browser window opens.** Sign in there yourself — Jervis never sees the
+password, and nothing in the helper can type into a field (there is a test asserting
+it uses no input API at all). When it detects a session it saves the cookies, closes
+the window, and the next `status` picks them up.
+
+### Why Jervis does its own sign-in
+
+The upstream `ubereats_login` cannot work. It returns the string
+`https://www.ubereats.com/login` and nothing else, while the server drives a *headless*
+browser with `headless: true` hardcoded and no way to override it. Signing in anywhere
+else never reaches that browser: the two share nothing. Its cookie file stays an empty
+array and `status` keeps saying you are signed out, however many times you log in.
+
+So `mcp/ubereats` runs its own helper (`node/login.js`) using **patchright** — the same
+stealth browser build the upstream server uses, because a vanilla Playwright browser is
+what Uber Eats' bot detection is looking for. It waits for the cookies that server
+actually recognises (`uev2.id`, `sid`, `uev2.tok`, `jwt-session`) and writes them, mode
+`0600`, to the path it reads.
+
+That file is a bearer token for your account. Treat it like a password:
+
+```bash
+ls -l ~/.strider/ubereats/cookies.json     # should be -rw-------
+```
 
 ## Checks worth doing, in this order
 

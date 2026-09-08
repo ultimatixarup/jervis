@@ -332,6 +332,12 @@ refuses outside 10%. Previews are single-use, expire in five minutes, and are di
 on a refusal or a cart change, so a rising price cannot be retried until it slips
 through. An unreadable total refuses rather than guesses.
 
+**Signing in is also Jervis's own**, because the upstream one cannot work: its
+`ubereats_login` returns a URL and nothing else, while its browser is headless with no
+override, so a session established anywhere else never reaches it. `node/login.js`
+opens the *same* patchright build headed, waits for Arup to sign in himself, and saves
+the cookies the upstream server recognises. Nothing in it types into a field.
+
 The original plan follows, for reference if the third-party server is ever dropped.
 
 ### Phase 6 (original plan) — Uber Eats (1–2 days, flaky by nature)

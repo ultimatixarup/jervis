@@ -1,0 +1,10 @@
+{
+  "name": "jervis-ubereats-login",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Headed sign-in helper for the Uber Eats MCP server",
+  "type": "commonjs",
+  "dependencies": {
+    "patchright": "1.62.3"
+  }
+}

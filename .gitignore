@@ -12,6 +12,9 @@ receipts/
 *.db-wal
 *.jsonl
 
+# node (the Uber Eats sign-in helper)
+node_modules/
+
 # python
 __pycache__/
 *.py[cod]
