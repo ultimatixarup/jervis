@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from pathlib import Path
 from typing import Any
 
 import click
 
+from . import daemon
 from .agent import Turn
 from .config import load_config
 from .credentials import detect
@@ -170,6 +172,16 @@ def status() -> None:
         click.echo(f"model:   {runtime.config.model}")
         click.echo(f"servers: {', '.join(s.name for s in runtime.config.enabled_servers)}")
         click.echo(f"tools:   {len(runtime.pool.tools)}")
+
+        repo = Path(__file__).resolve().parents[2]
+        for agent in (
+            daemon.brain_agent(repo, runtime.config.paths.home),
+            daemon.telegram_agent(repo, runtime.config.paths.home),
+        ):
+            state = daemon.describe(agent)
+            colour = "green" if state.startswith("running") else None
+            click.secho(f"daemon:  {agent.label} - {state}", fg=colour)
+
         for name, error in runtime.pool.failures.items():
             click.secho(f"  FAILED {name}: {error}", fg="red")
         entries = AuditLog(runtime.config.paths.audit_log).entries()[-5:]

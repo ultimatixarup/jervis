@@ -340,7 +340,26 @@ Tests
 Acceptance
 - Voice: "Jervis, order my usual from <restaurant>" → "That's <items>, $X. Place it?" → "yes" → order placed, receipt saved.
 
-### Phase 7 — Daemon + polish (½ day)
+### Phase 7 — Daemon + polish (½ day)  — **done**
+
+Built as two independent agents rather than one: `com.arup.jervis` (the brain) and
+`com.arup.jervis.telegram` (the bot, optional). They fail separately and only the
+brain is essential.
+
+The plist is generated with `plistlib`, not substituted into a `.plist.template`. A
+repo path containing an ampersand or an apostrophe would silently produce malformed
+XML under sed, and `plutil -lint` would then reject something nobody had touched.
+There is a test that renders into a path containing `R&D <jervis> "quoted"
+'apostrophe'` and lints the result.
+
+Two things launchd makes easy to get wrong, both now covered by tests: an agent starts
+with no shell profile, so `PATH` must name Homebrew explicitly or `uv` is not found
+and the agent crash-loops for no visible reason; and `ThrottleInterval` matters,
+because `KeepAlive` plus a config mistake is otherwise a busy loop.
+
+Verified on this machine: `plutil -lint` OK, `launchctl print` shows it running,
+`GET /health` 200, and `kill -9` on the brain was recovered from in under a second
+with a new pid.
 
 - `daemon/install.sh` renders plist with absolute paths, `KeepAlive`, `RunAtLoad`,
   `StandardOutPath/StandardErrorPath` → `~/.jervis/logs/`, `EnvironmentVariables.PATH` incl. Homebrew.

@@ -90,7 +90,7 @@ voice/    wake word, speech-to-text, text-to-speech, the listening loop
 telegram/ the Telegram bot, a client of the HTTP endpoint
 mcp/      one MCP server per capability: macos, claudecode, imessage, mail,
           bank, ubereats
-daemon/   launchd agent (Phase 7)
+daemon/   the launchd agents: install.sh, uninstall.sh
 scripts/  setup, doctor, permissions, start/stop, tests
 tests/    end-to-end scripted conversations and shared fixtures
 ```
